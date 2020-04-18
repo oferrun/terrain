@@ -10,3 +10,6 @@
 [submodule "bimg"]
 	path = bimg
 	url = https://github.com/bkaradzic/bimg.git
+[submodule "glfw"]
+	path = glfw
+	url = https://github.com/glfw/glfw.git
