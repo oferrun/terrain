@@ -6,6 +6,7 @@ local BGFX_DIR = "bgfx"
 local BIMG_DIR = "bimg"
 local BX_DIR = "bx"
 local GLFW_DIR = "glfw"
+local IMGUI_DIR = "imgui"
 
 solution "rpg"
 	location(BUILD_DIR)
@@ -51,10 +52,17 @@ project "terrain"
 	cppdialect "C++14"
 	exceptionhandling "Off"
 	rtti "Off"
-	files "terrain.cpp"
+	files
+	{
+		"terrain.cpp",
+		path.join(BGFX_DIR, "examples/common/imgui/*.cpp"),
+		path.join(BGFX_DIR, "3rdparty/dear-imgui/*.cpp"),
+	} 
 	includedirs
 	{
+		path.join(BIMG_DIR, "include"),
 		path.join(BGFX_DIR, "include"),
+		path.join(BGFX_DIR, "3rdparty"),
 		path.join(BX_DIR, "include"),
 		path.join(GLFW_DIR, "include")
 	}
@@ -64,6 +72,8 @@ project "terrain"
 	filter "system:linux"
 		links { "dl", "GL", "pthread", "X11" }
 	setBxCompat()
+	filter "action:vs*"
+		defines {"_CRT_SECURE_NO_WARNINGS", "__STDC_LIMIT_MACROS", "__STDC_FORMAT_MACROS", "__STDC_CONSTANT_MACROS"}
 	
 project "bgfx"
 	kind "StaticLib"
