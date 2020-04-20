@@ -7,6 +7,7 @@ local BIMG_DIR = "bimg"
 local BX_DIR = "bx"
 local GLFW_DIR = "glfw"
 local IMGUI_DIR = "imgui"
+local SRC_DIR = "src"
 
 solution "rpg"
 	location(BUILD_DIR)
@@ -52,9 +53,10 @@ project "terrain"
 	cppdialect "C++14"
 	exceptionhandling "Off"
 	rtti "Off"
+	debugdir "runtime"
 	files
 	{
-		"terrain.cpp",
+		path.join(SRC_DIR, "*.cpp"),
 		path.join(BGFX_DIR, "examples/common/imgui/*.cpp"),
 		path.join(BGFX_DIR, "3rdparty/dear-imgui/*.cpp"),
 	} 
@@ -74,6 +76,7 @@ project "terrain"
 	setBxCompat()
 	filter "action:vs*"
 		defines {"_CRT_SECURE_NO_WARNINGS", "__STDC_LIMIT_MACROS", "__STDC_FORMAT_MACROS", "__STDC_CONSTANT_MACROS"}
+
 	
 project "bgfx"
 	kind "StaticLib"
@@ -104,7 +107,7 @@ project "bgfx"
 	filter "configurations:Debug"
 		defines "BGFX_CONFIG_DEBUG=1"
 	filter "action:vs*"
-		defines "_CRT_SECURE_NO_WARNINGS"
+		defines {"_CRT_SECURE_NO_WARNINGS", "__STDC_LIMIT_MACROS", "__STDC_FORMAT_MACROS", "__STDC_CONSTANT_MACROS"}
 		excludes
 		{
 			path.join(BGFX_DIR, "src/glcontext_glx.cpp"),
@@ -139,6 +142,8 @@ project "bimg"
 		path.join(BIMG_DIR, "3rdparty/astc-codec/include"),
 	}
 	setBxCompat()
+	filter "action:vs*"
+		defines {"_CRT_SECURE_NO_WARNINGS", "__STDC_LIMIT_MACROS", "__STDC_FORMAT_MACROS", "__STDC_CONSTANT_MACROS"}
 
 project "bx"
 	kind "StaticLib"
@@ -164,7 +169,7 @@ project "bx"
 		path.join(BX_DIR, "include")
 	}
 	filter "action:vs*"
-		defines "_CRT_SECURE_NO_WARNINGS"
+		defines {"_CRT_SECURE_NO_WARNINGS", "__STDC_LIMIT_MACROS", "__STDC_FORMAT_MACROS", "__STDC_CONSTANT_MACROS"}
 	setBxCompat()
 		
 project "glfw"
