@@ -377,13 +377,51 @@ static int32_t runApiThread(bx::Thread *self, void *userData)
 
 	// Create program from shaders.
 	bgfx::ProgramHandle program = loadProgram("vs_cubes", "fs_cubes");
+	bgfx::ProgramHandle combinedProgram = loadProgram("vs_deferred_combine", "fs_deferred_combine");
+
+
+	const uint64_t tsFlags = 0
+		| BGFX_SAMPLER_MIN_POINT
+		| BGFX_SAMPLER_MAG_POINT
+		| BGFX_SAMPLER_MIP_POINT
+		| BGFX_SAMPLER_U_CLAMP
+		| BGFX_SAMPLER_V_CLAMP
+		;
+
+	bgfx::Attachment gbufferAt[3];
+	bgfx::TextureHandle m_gbufferTex[3];
+	
+	bgfx::FrameBufferHandle m_gbuffer;
+
+	uint32_t width = args->width;
+	uint32_t height = args->height;
+
+	/*m_gbufferTex[0] = bgfx::createTexture2D(uint16_t(width), uint16_t(height), false, 1, bgfx::TextureFormat::BGRA8, 0 | tsFlags);
+	const bgfx::Memory* mem = bgfx::alloc(width * height * 4);
+	memset(mem->data, 0xFF, width * height * 4);
+	bgfx::updateTexture2D(m_gbufferTex[0], 0, 0, 0, 0, uint16_t(width), uint16_t(height), mem);*/
+
+	{
+		m_gbufferTex[0] = bgfx::createTexture2D(uint16_t(width), uint16_t(height), false, 1, bgfx::TextureFormat::BGRA8, BGFX_TEXTURE_RT | tsFlags);
+		m_gbufferTex[1] = bgfx::createTexture2D(uint16_t(width), uint16_t(height), false, 1, bgfx::TextureFormat::BGRA8, BGFX_TEXTURE_RT | tsFlags);
+		gbufferAt[0].init(m_gbufferTex[0]);
+		gbufferAt[1].init(m_gbufferTex[1]);
+	}
+
+	m_gbufferTex[2] = bgfx::createTexture2D(uint16_t(width), uint16_t(height), false, 1, bgfx::TextureFormat::D24S8, BGFX_TEXTURE_RT | tsFlags);
+	gbufferAt[2].init(m_gbufferTex[2]);
+
+	m_gbuffer = bgfx::createFrameBuffer(BX_COUNTOF(gbufferAt), gbufferAt, true);
+
+	bgfx::setViewFrameBuffer(0, m_gbuffer);
+
+	bgfx::UniformHandle s_albedo = bgfx::createUniform("s_albedo", bgfx::UniformType::Sampler);
 
 	// Set view 0 to the same dimensions as the window and to clear the color buffer.
 	const bgfx::ViewId kClearView = 0;
-	bgfx::setViewClear(kClearView, BGFX_CLEAR_COLOR);
+	//bgfx::setViewClear(kClearView, BGFX_CLEAR_COLOR);
 	bgfx::setViewRect(kClearView, 0, 0, bgfx::BackbufferRatio::Equal);
-	uint32_t width = args->width;
-	uint32_t height = args->height;
+	
 	bool showStats = false;
 	bool exit = false;
 	struct MouseState
@@ -514,12 +552,20 @@ static int32_t runApiThread(bx::Thread *self, void *userData)
 		// Submit primitive for rendering to view 0.
 		bgfx::submit(0, program);
 
-		/*bgfx::setState(0
+		
+
+		float proj[16];
+		bx::mtxOrtho(proj, 0.0f, 1.0f, 1.0f, 0.0f, 0.0f, 100.0f, 0.0f, caps->homogeneousDepth);
+		bgfx::setViewTransform(1, NULL, proj);
+
+		bgfx::setState(0
 			| BGFX_STATE_WRITE_RGB
-			| BGFX_STATE_WRITE_A
+			//| BGFX_STATE_WRITE_A
 		);
+		bgfx::setViewRect(1, 0, 0, uint16_t(width), uint16_t(height));
+		bgfx::setTexture(0, s_albedo, m_gbufferTex[2]);
 		screenSpaceQuad((float)width, (float)height, 0, caps->originBottomLeft);
-		bgfx::submit(0, program);*/
+		bgfx::submit(1, combinedProgram);
 
 		
 		bgfx::frame();
