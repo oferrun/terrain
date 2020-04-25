@@ -108,6 +108,11 @@ static bgfx::ShaderHandle loadShader(bx::FileReaderI* _reader, const char* _name
 	return handle;
 }
 
+bgfx::ShaderHandle loadShader(const char* _name)
+{
+	return loadShader(s_fileReader, _name);
+}
+
 bgfx::ProgramHandle loadProgram(bx::FileReaderI* _reader, const char* _vsName, const char* _fsName)
 {
 	bgfx::ShaderHandle vsh = loadShader(_reader, _vsName);
@@ -232,6 +237,26 @@ struct PosColorVertex
 
 bgfx::VertexLayout PosColorVertex::ms_layout;
 
+struct Pos4Vertex
+{
+	float m_x;
+	float m_y;
+	float m_z;
+	float m_w;
+
+	static void init()
+	{
+		ms_layout
+			.begin()
+			.add(bgfx::Attrib::Position, 4, bgfx::AttribType::Float)
+			.end();
+	};
+
+	static bgfx::VertexLayout ms_layout;
+};
+
+bgfx::VertexLayout Pos4Vertex::ms_layout;
+
 static PosColorVertex s_cubeVertices[] =
 {
 	{-1.0f,  1.0f,  1.0f, 0xff000000 },
@@ -337,6 +362,8 @@ void screenSpaceQuad(float _textureWidth, float _textureHeight, float _texelHalf
 	}
 }
 
+
+
 static int32_t runApiThread(bx::Thread *self, void *userData)
 {
 	auto args = (ApiThreadArgs *)userData;
@@ -345,7 +372,7 @@ static int32_t runApiThread(bx::Thread *self, void *userData)
 	init.platformData = args->platformData;
 	init.resolution.width = args->width;
 	init.resolution.height = args->height;
-	init.resolution.reset = BGFX_RESET_VSYNC;
+	init.resolution.reset = BGFX_RESET_NONE;
 	if (!bgfx::init(init))
 		return 1;
 
@@ -361,6 +388,7 @@ static int32_t runApiThread(bx::Thread *self, void *userData)
 	// Create vertex stream declaration.
 	PosColorVertex::init();
 	PosTexCoord0Vertex::init();
+	Pos4Vertex::init();
 
 	// Create static vertex buffer.
 	bgfx::VertexBufferHandle vbh = bgfx::createVertexBuffer(
@@ -416,6 +444,7 @@ static int32_t runApiThread(bx::Thread *self, void *userData)
 	bgfx::setViewFrameBuffer(0, m_gbuffer);
 
 	bgfx::UniformHandle s_albedo = bgfx::createUniform("s_albedo", bgfx::UniformType::Sampler);
+	bgfx::UniformHandle s_depth = bgfx::createUniform("s_depth", bgfx::UniformType::Sampler);
 
 	// Set view 0 to the same dimensions as the window and to clear the color buffer.
 	const bgfx::ViewId kClearView = 0;
@@ -442,6 +471,43 @@ static int32_t runApiThread(bx::Thread *self, void *userData)
 		int32_t m_mz;
 		uint8_t m_buttons[4];
 	};
+
+	uint32_t heightMapWidth = 1024;
+	uint32_t heightMapHeigt = 1024;
+	uint32_t currFrame = UINT32_MAX;
+	uint32_t readingFrame = 0;
+
+	bgfx::TextureHandle heightTexture = bgfx::createTexture2D((uint16_t)heightMapWidth, (uint16_t)heightMapHeigt, false, 1, bgfx::TextureFormat::R16, 0 | BGFX_TEXTURE_COMPUTE_WRITE | BGFX_SAMPLER_MIN_POINT
+		| BGFX_SAMPLER_MAG_POINT
+		| BGFX_SAMPLER_MIP_POINT
+		| BGFX_SAMPLER_U_CLAMP
+		| BGFX_SAMPLER_V_CLAMP);
+
+	bgfx::TextureHandle heightTextureCPU = bgfx::createTexture2D((uint16_t)heightMapWidth, (uint16_t)heightMapHeigt, false, 1, bgfx::TextureFormat::R16, 0 | BGFX_TEXTURE_READ_BACK| BGFX_TEXTURE_BLIT_DST|BGFX_SAMPLER_MIN_POINT
+		| BGFX_SAMPLER_MAG_POINT
+		| BGFX_SAMPLER_MIP_POINT
+		| BGFX_SAMPLER_U_CLAMP
+		| BGFX_SAMPLER_V_CLAMP);
+	const bgfx::Memory* mem;
+	uint16_t* heightmap = (uint16_t*)malloc(heightMapWidth * heightMapHeigt * sizeof(uint16_t));
+	uint16_t* heightmap2 = (uint16_t*)malloc(heightMapWidth * heightMapHeigt * sizeof(uint16_t));
+	memset(heightmap, 0xEE, heightMapWidth * heightMapHeigt * sizeof(uint16_t));
+	mem = bgfx::makeRef(&heightmap[0], sizeof(uint16_t) * heightMapWidth * heightMapHeigt);
+	bgfx::updateTexture2D(heightTexture, 0, 0, 0, 0, (uint16_t)heightMapWidth, (uint16_t)heightMapHeigt, mem);
+	memset(heightmap2, 0xAA, heightMapWidth * heightMapHeigt * sizeof(uint16_t));
+	bgfx::UniformHandle s_texColor = bgfx::createUniform("s_texColor", bgfx::UniformType::Sampler);
+	bgfx::ProgramHandle programCompute = bgfx::createProgram(loadShader("cs_update"), true);
+
+	bgfx::UniformHandle u_viewProj = bgfx::createUniform("u_myViewProj", bgfx::UniformType::Mat4);
+	bgfx::UniformHandle u_invViewProj = bgfx::createUniform("u_myInvViewProj", bgfx::UniformType::Mat4);
+
+	float mousebuff[4];
+	mousebuff[0] = 512.0f;
+	mousebuff[1] = 384.0f;
+	mousebuff[2] = 0.0f;
+	mousebuff[3] = 0.0f;
+	const bgfx::Memory* memmouse = bgfx::makeRef(mousebuff, sizeof(mousebuff));
+	bgfx::DynamicVertexBufferHandle mouseBufferHandle = bgfx::createDynamicVertexBuffer(memmouse, Pos4Vertex::ms_layout, BGFX_BUFFER_COMPUTE_READ/*BGFX_BUFFER_COMPUTE_READ_WRITE*/);
 
 	static MouseState mouseState;
 	while (!exit) {
@@ -497,6 +563,27 @@ static int32_t runApiThread(bx::Thread *self, void *userData)
 		ImGui::End();
 
 		imguiEndFrame();
+
+
+
+
+		if (readingFrame == currFrame)
+		{
+			int ofer = 4;
+		}
+
+		bgfx::setImage(0, heightTexture, 0, bgfx::Access::ReadWrite);
+		bgfx::dispatch(0, programCompute, 1024 / 16, 1024 / 16);
+
+		
+
+		if (currFrame == 100 && readingFrame == 0)
+		{
+			bgfx::blit(0, heightTextureCPU, 0, 0, heightTexture, 0, 0);
+			readingFrame = bgfx::readTexture(heightTextureCPU, heightmap2);
+		}
+		
+
 		//// This dummy draw call is here to make sure that view 0 is cleared if no other draw calls are submitted to view 0.
 		bgfx::touch(kClearView);
 		// Set view 0 clear state.
@@ -507,8 +594,16 @@ static int32_t runApiThread(bx::Thread *self, void *userData)
 			, 0
 		);
 
+		mousebuff[0] = (float)mouseState.m_mx;
+		mousebuff[1] = (float)mouseState.m_my;
+		const bgfx::Memory* memmouse2 = bgfx::makeRef(mousebuff, sizeof(mousebuff));
+		bgfx::update(mouseBufferHandle, 0, memmouse2);
+
 		const bx::Vec3 at = { 0.0f, 0.0f,   0.0f };
 		const bx::Vec3 eye = { 0.0f, 0.0f, -35.0f };
+
+		float projView[16];
+		float invProjView[16];
 
 		// Set view and projection matrix for view 0.
 		{
@@ -519,14 +614,19 @@ static int32_t runApiThread(bx::Thread *self, void *userData)
 			bx::mtxProj(proj, 60.0f, float(width) / float(height), 0.1f, 100.0f, bgfx::getCaps()->homogeneousDepth);
 			bgfx::setViewTransform(0, view, proj);
 
+			
+			bx::mtxMul(projView, view, proj);
+			bx::mtxInverse(invProjView, projView);
+
 			// Set view 0 default viewport.
 			bgfx::setViewRect(0, 0, 0, uint16_t(width), uint16_t(height));
 		}
 
 		float mtx[16];
-		bx::mtxRotateXY(mtx, 0, 0);
-		mtx[12] = -15.0f + float(0)*3.0f;
-		mtx[13] = -15.0f + float(0)*3.0f;
+		//bx::mtxRotateXY(mtx, 0, 0);
+		bx::mtxScale(mtx, 10);
+		mtx[12] = 0;
+		mtx[13] = 0;
 		mtx[14] = 0.0f;
 
 		uint64_t state = 0
@@ -562,13 +662,17 @@ static int32_t runApiThread(bx::Thread *self, void *userData)
 			| BGFX_STATE_WRITE_RGB
 			//| BGFX_STATE_WRITE_A
 		);
+		bgfx::setUniform(u_invViewProj, invProjView, 1);
 		bgfx::setViewRect(1, 0, 0, uint16_t(width), uint16_t(height));
-		bgfx::setTexture(0, s_albedo, m_gbufferTex[2]);
+		bgfx::setTexture(0, s_albedo, m_gbufferTex[0]);
+		bgfx::setTexture(1, s_depth, m_gbufferTex[2]);
 		screenSpaceQuad((float)width, (float)height, 0, caps->originBottomLeft);
+		bgfx::setBuffer(2, mouseBufferHandle, bgfx::Access::Read);
 		bgfx::submit(1, combinedProgram);
 
 		
-		bgfx::frame();
+		currFrame = bgfx::frame();
+		int ofer = 4;
 	}
 
 	imguiDestroy();
