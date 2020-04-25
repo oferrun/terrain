@@ -445,6 +445,7 @@ static int32_t runApiThread(bx::Thread *self, void *userData)
 
 	bgfx::UniformHandle s_albedo = bgfx::createUniform("s_albedo", bgfx::UniformType::Sampler);
 	bgfx::UniformHandle s_depth = bgfx::createUniform("s_depth", bgfx::UniformType::Sampler);
+	bgfx::UniformHandle u_params = bgfx::createUniform("u_params", bgfx::UniformType::Vec4);
 
 	// Set view 0 to the same dimensions as the window and to clear the color buffer.
 	const bgfx::ViewId kClearView = 0;
@@ -509,6 +510,8 @@ static int32_t runApiThread(bx::Thread *self, void *userData)
 	const bgfx::Memory* memmouse = bgfx::makeRef(mousebuff, sizeof(mousebuff));
 	bgfx::DynamicVertexBufferHandle mouseBufferHandle = bgfx::createDynamicVertexBuffer(memmouse, Pos4Vertex::ms_layout, BGFX_BUFFER_COMPUTE_READ/*BGFX_BUFFER_COMPUTE_READ_WRITE*/);
 
+	float brushSize = 1.0;
+
 	static MouseState mouseState;
 	while (!exit) {
 		// Handle events from the main thread.
@@ -558,7 +561,7 @@ static int32_t runApiThread(bx::Thread *self, void *userData)
 			, NULL
 			, 0
 		);
-
+		ImGui::SliderFloat("Brush size", &brushSize, 1, 20);
 
 		ImGui::End();
 
@@ -596,6 +599,7 @@ static int32_t runApiThread(bx::Thread *self, void *userData)
 
 		mousebuff[0] = (float)mouseState.m_mx;
 		mousebuff[1] = (float)mouseState.m_my;
+		mousebuff[2] = (float)(mouseState.m_buttons[0] | mouseState.m_buttons[1] << 1);
 		const bgfx::Memory* memmouse2 = bgfx::makeRef(mousebuff, sizeof(mousebuff));
 		bgfx::update(mouseBufferHandle, 0, memmouse2);
 
@@ -617,6 +621,12 @@ static int32_t runApiThread(bx::Thread *self, void *userData)
 			
 			bx::mtxMul(projView, view, proj);
 			bx::mtxInverse(invProjView, projView);
+
+			float params[4];
+			params[0] = 1.0f / (float)width;
+			params[1] = 1.0f / (float)height;
+			params[2] = brushSize;
+			bgfx::setUniform(u_params, params, 1);
 
 			// Set view 0 default viewport.
 			bgfx::setViewRect(0, 0, 0, uint16_t(width), uint16_t(height));
@@ -663,6 +673,7 @@ static int32_t runApiThread(bx::Thread *self, void *userData)
 			//| BGFX_STATE_WRITE_A
 		);
 		bgfx::setUniform(u_invViewProj, invProjView, 1);
+		
 		bgfx::setViewRect(1, 0, 0, uint16_t(width), uint16_t(height));
 		bgfx::setTexture(0, s_albedo, m_gbufferTex[0]);
 		bgfx::setTexture(1, s_depth, m_gbufferTex[2]);
@@ -688,7 +699,7 @@ int main(int argc, char **argv)
 	if (!glfwInit())
 		return 1;
 	glfwWindowHint(GLFW_CLIENT_API, GLFW_NO_API);
-	GLFWwindow *window = glfwCreateWindow(1024, 768, "helloworld multithreaded", nullptr, nullptr);
+	GLFWwindow *window = glfwCreateWindow(1280, 800, "helloworld multithreaded", nullptr, nullptr);
 	if (!window)
 		return 1;
 	glfwSetKeyCallback(window, glfw_keyCallback);

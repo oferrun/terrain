@@ -11,6 +11,7 @@ $input v_texcoord0
 #include "shaderlib.sh"
 
 uniform mat4 u_myInvViewProj;
+uniform vec4 u_params;
 
 SAMPLER2D(s_albedo, 0);
 SAMPLER2D(s_depth, 1);
@@ -54,7 +55,7 @@ inline float evaluateModificationBrush (    vec2             worldPosition,
 void main()
 {
 	vec2 mousePos = u_mouseBuffer[0].xy;
-	vec2 invScreenSize = vec2(1.0/1024.0, 1.0/768.0);
+	vec2 invScreenSize = u_params.xy;
 	vec2 uv = mousePos * invScreenSize;
 	const float mouseDepth = texture2D(s_depth, uv);
 
@@ -65,13 +66,16 @@ void main()
 	const float pixelDepth = texture2D(s_depth, v_texcoord0);
 	const float3 worldPosition = GetWorldPositionFromDepth (v_texcoord0, pixelDepth, invScreenSize);
     
-	float brushSize = 1.0;
+	float brushSize = u_params.z;
 	float brush = evaluateModificationBrush(worldPosition.xy, worldMousePosition.xy, brushSize);
-	vec4 brushColor = vec4(vec3(0.5, 0.9, 0.5), brush);
+	vec4 brushColor;
+	// if left mouse button pressed - green. if right pressed red . none pressed - gray
+	brushColor.xyz = u_mouseBuffer[0].z == 1 ? vec3(0.5, 0.9, 0.5) : u_mouseBuffer[0].z == 2 ? vec3(0.9, 0.5, 0.5) : vec3(0.5, 0.5, 0.7);
+	brushColor.w = brush;
 	vec4 color  = texture2D(s_albedo, v_texcoord0);
-	//float d = texture2D(s_albedo, v_texcoord0).x;
+
 	//float d = LinearizeDepth(v_texcoord0);
-	//brush = 1.0;
+
 
 	//color = vec4(brush, brush, brush, 1.0);
 	//color.x *= u_mouseBuffer[0];
