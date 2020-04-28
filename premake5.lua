@@ -130,6 +130,7 @@ project "bimg"
 	{
 		path.join(BIMG_DIR, "include/bimg/*.h"),
 		path.join(BIMG_DIR, "src/image.cpp"),
+		path.join(BIMG_DIR, "src/image_decode.cpp"),
 		path.join(BIMG_DIR, "src/image_gnf.cpp"),
 		path.join(BIMG_DIR, "src/*.h"),
 		path.join(BIMG_DIR, "3rdparty/astc-codec/src/decoder/*.cc")
@@ -140,6 +141,7 @@ project "bimg"
 		path.join(BIMG_DIR, "include"),
 		path.join(BIMG_DIR, "3rdparty/astc-codec"),
 		path.join(BIMG_DIR, "3rdparty/astc-codec/include"),
+		path.join(BIMG_DIR, "3rdparty"),
 	}
 	setBxCompat()
 	filter "action:vs*"

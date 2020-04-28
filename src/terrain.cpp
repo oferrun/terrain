@@ -7,6 +7,9 @@
 #include <bx/spscqueue.h>
 #include <bx/thread.h>
 #include <bx/file.h>
+#include <bx/timer.h>
+#include <bx/math.h>
+
 #include <bgfx/bgfx.h>
 #include <bgfx/platform.h>
 #include <GLFW/glfw3.h>
@@ -19,6 +22,9 @@
 
 
 #include "../bgfx/examples/common/imgui/imgui.h"
+#include "camera.h"
+
+#define MAX(a, b) ((a) > (b)) ? (a) : (b)
 
 /////////////////////////////////////
 //// utils
@@ -130,6 +136,194 @@ bgfx::ProgramHandle loadProgram(const char* _vsName, const char* _fsName)
 	return loadProgram(s_fileReader, _vsName, _fsName);
 }
 
+
+#include <bimg/decode.h>
+
+void* load(bx::FileReaderI* _reader, bx::AllocatorI* _allocator, const char* _filePath, uint32_t* _size)
+{
+	if (bx::open(_reader, _filePath))
+	{
+		uint32_t size = (uint32_t)bx::getSize(_reader);
+		void* data = BX_ALLOC(_allocator, size);
+		bx::read(_reader, data, size);
+		bx::close(_reader);
+		if (NULL != _size)
+		{
+			*_size = size;
+		}
+		return data;
+	}
+	else
+	{
+		//DBG("Failed to open: %s.", _filePath);
+	}
+
+	if (NULL != _size)
+	{
+		*_size = 0;
+	}
+
+	return NULL;
+}
+
+
+void unload(void* _ptr)
+{
+	BX_FREE(getDefaultAllocator(), _ptr);
+}
+
+static void imageReleaseCb(void* _ptr, void* _userData)
+{
+	BX_UNUSED(_ptr);
+	bimg::ImageContainer* imageContainer = (bimg::ImageContainer*)_userData;
+	bimg::imageFree(imageContainer);
+}
+
+
+
+bgfx::TextureHandle loadTexture(bx::FileReaderI* _reader, const char* _filePath, uint64_t _flags, uint8_t _skip, bgfx::TextureInfo* _info, bimg::Orientation::Enum* _orientation)
+{
+	BX_UNUSED(_skip);
+	bgfx::TextureHandle handle = BGFX_INVALID_HANDLE;
+
+	uint32_t size;
+	void* data = load(_reader,getDefaultAllocator(), _filePath, &size);
+	if (NULL != data)
+	{
+		bimg::ImageContainer* imageContainer = bimg::imageParse(getDefaultAllocator(), data, size);
+
+		if (NULL != imageContainer)
+		{
+			if (NULL != _orientation)
+			{
+				*_orientation = imageContainer->m_orientation;
+			}
+
+			const bgfx::Memory* mem = bgfx::makeRef(
+				imageContainer->m_data
+				, imageContainer->m_size
+				, imageReleaseCb
+				, imageContainer
+			);
+			unload(data);
+
+			if (imageContainer->m_cubeMap)
+			{
+				handle = bgfx::createTextureCube(
+					uint16_t(imageContainer->m_width)
+					, 1 < imageContainer->m_numMips
+					, imageContainer->m_numLayers
+					, bgfx::TextureFormat::Enum(imageContainer->m_format)
+					, _flags
+					, mem
+				);
+			}
+			else if (1 < imageContainer->m_depth)
+			{
+				handle = bgfx::createTexture3D(
+					uint16_t(imageContainer->m_width)
+					, uint16_t(imageContainer->m_height)
+					, uint16_t(imageContainer->m_depth)
+					, 1 < imageContainer->m_numMips
+					, bgfx::TextureFormat::Enum(imageContainer->m_format)
+					, _flags
+					, mem
+				);
+			}
+			else if (bgfx::isTextureValid(0, false, imageContainer->m_numLayers, bgfx::TextureFormat::Enum(imageContainer->m_format), _flags))
+			{
+				handle = bgfx::createTexture2D(
+					uint16_t(imageContainer->m_width)
+					, uint16_t(imageContainer->m_height)
+					, 1 < imageContainer->m_numMips
+					, imageContainer->m_numLayers
+					, bgfx::TextureFormat::Enum(imageContainer->m_format)
+					, _flags
+					, mem
+				);
+			}
+
+			if (bgfx::isValid(handle))
+			{
+				bgfx::setName(handle, _filePath);
+			}
+
+			if (NULL != _info)
+			{
+				bgfx::calcTextureSize(
+					*_info
+					, uint16_t(imageContainer->m_width)
+					, uint16_t(imageContainer->m_height)
+					, uint16_t(imageContainer->m_depth)
+					, imageContainer->m_cubeMap
+					, 1 < imageContainer->m_numMips
+					, imageContainer->m_numLayers
+					, bgfx::TextureFormat::Enum(imageContainer->m_format)
+				);
+			}
+		}
+	}
+
+	return handle;
+}
+
+bgfx::TextureHandle loadTexture(const char* _name, uint64_t _flags = BGFX_TEXTURE_NONE | BGFX_SAMPLER_NONE, uint8_t _skip = 0, bgfx::TextureInfo* _info = NULL, bimg::Orientation::Enum* _orientation = NULL);
+
+bgfx::TextureHandle loadTexture(const char* _name, uint64_t _flags, uint8_t _skip, bgfx::TextureInfo* _info, bimg::Orientation::Enum* _orientation)
+{
+	return loadTexture(s_fileReader, _name, _flags, _skip, _info, _orientation);
+}
+struct SampleData
+{
+	static constexpr uint32_t kNumSamples = 100;
+
+	SampleData()
+	{
+		reset();
+	}
+
+	void reset()
+	{
+		m_offset = 0;
+		bx::memSet(m_values, 0, sizeof(m_values));
+
+		m_min = 0.0f;
+		m_max = 0.0f;
+		m_avg = 0.0f;
+	}
+
+	void pushSample(float value)
+	{
+		m_values[m_offset] = value;
+		m_offset = (m_offset + 1) % kNumSamples;
+
+		float min = bx::kFloatMax;
+		float max = -bx::kFloatMax;
+		float avg = 0.0f;
+
+		for (uint32_t ii = 0; ii < kNumSamples; ++ii)
+		{
+			const float val = m_values[ii];
+			min = bx::min(min, val);
+			max = bx::max(max, val);
+			avg += val;
+		}
+
+		m_min = min;
+		m_max = max;
+		m_avg = avg / kNumSamples;
+	}
+
+	int32_t m_offset;
+	float m_values[kNumSamples];
+
+	float m_min;
+	float m_max;
+	float m_avg;
+};
+
+static SampleData s_frameTime;
+
 /////////////////////////////////////
 
 static bx::DefaultAllocator s_allocator;
@@ -215,6 +409,13 @@ struct ApiThreadArgs
 	uint32_t height;
 };
 
+struct BrushData
+{
+	bool    m_raise;
+	int32_t m_size;
+	float   m_power;
+	bx::Vec3   m_worldPosition;
+};
 
 struct PosColorVertex
 {
@@ -228,7 +429,7 @@ struct PosColorVertex
 		ms_layout
 			.begin()
 			.add(bgfx::Attrib::Position, 3, bgfx::AttribType::Float)
-			.add(bgfx::Attrib::Color0, 4, bgfx::AttribType::Uint8, true)
+			.add(bgfx::Attrib::Color1, 4, bgfx::AttribType::Uint8, true)
 			.end();
 	};
 
@@ -364,18 +565,293 @@ void screenSpaceQuad(float _textureWidth, float _textureHeight, float _texelHalf
 
 
 
-static int32_t runApiThread(bx::Thread *self, void *userData)
-{
-	auto args = (ApiThreadArgs *)userData;
-	// Initialize bgfx using the native window handle and window resolution.
-	bgfx::Init init;
-	init.platformData = args->platformData;
-	init.resolution.width = args->width;
-	init.resolution.height = args->height;
-	init.resolution.reset = BGFX_RESET_NONE;
-	if (!bgfx::init(init))
-		return 1;
+///////////////////////////////////////////////////////////////////////////////////////////////////
 
+static const uint16_t s_terrainSize = 16;
+static const uint32_t s_worldNumSectorsX = 32;
+static const uint32_t s_worldNumSectorsY = 32;
+static const uint32_t s_maxPatchesPerSector = 64;
+static const uint32_t s_sectorSizeInMeters = 64;
+static const uint32_t s_maxPatchesPerSectorRow = 8;
+static const uint32_t s_maxPatchesPerSectorCol = 8;
+static const uint32_t s_maxNodesInTree = 1 + 4 + 16 + 64 + 256 + 1024;
+
+//////////////////////////////////////////////////////////////////////////////////////////////////
+
+// terrain patch instance data
+struct InstanceData
+{
+	float worldPosX;
+	float worldPosY;
+	float worldSize;
+	float lodTransition;
+	float heightMapAtlasU;
+	float heightMapAtlasV;
+	float pad0;
+	float pad1;
+};
+
+struct QuadTreeNode
+{
+	float x;
+	float z;
+	int32_t	firstChildIndex;
+	uint8_t lod;
+};
+
+struct TerrainData
+{
+	
+	uint16_t*            m_heightMap;
+
+	PosColorVertex*		 m_vertices;
+	uint32_t             m_vertexCount;
+	uint16_t*            m_indices;
+	uint32_t             m_indexCount;
+};
+
+//////////////////////////////////////////////////////////////////////////////////////////////////
+
+static QuadTreeNode* s_quadTree;
+static QuadTreeNode** s_nodesToRender;
+static uint32_t s_numNodesToRender = 0;
+static uint8_t* s_sectorsLODMap = NULL;
+static uint32_t s_numPatches = 0;
+static InstanceData* s_patches = NULL;
+
+static uint32_t s_heightMapSize = 132;
+
+//////////////////////////////////////////////////////////////////////////////////////////////////
+
+void buildQuadTree(float* playerPosition)
+{
+
+	uint16_t nodeIndex = 0;
+	QuadTreeNode* node = &s_quadTree[nodeIndex];
+	// hack for height testing
+	node->lod = 0;
+	node->firstChildIndex = -1;
+	node->x = 0;
+	node->z = 0;
+	++nodeIndex;
+
+	uint16_t* nodesQueue = (uint16_t*)alloca(sizeof(uint16_t) * s_maxNodesInTree);
+	uint16_t queueHead = 0;
+	uint16_t queueSize = 0;
+	// add head to queue
+	queueSize++;
+	nodesQueue[queueHead] = 0;
+
+	while (queueSize > 0)
+	{
+		// pop from queue
+		node = &s_quadTree[nodesQueue[queueHead]];
+		++queueHead;
+		--queueSize;
+
+		float nodeSize = 64.0f * (1 << node->lod);
+		float halfNodeSize = nodeSize * 0.5f;
+		float nodeCenterX = node->x + halfNodeSize;
+		float nodeCenterZ = node->z + halfNodeSize;
+		float distance = (nodeCenterX - playerPosition[0]) * ((nodeCenterX - playerPosition[0])) +
+			(nodeCenterZ - playerPosition[2]) * ((nodeCenterZ - playerPosition[2]));
+		// check if distance is less than the sqrt(2) of the half (corner of the rect is the furtherest point from the center)
+		if (node->lod > 0 && distance < halfNodeSize * halfNodeSize * 2.0f)
+		{
+			// split node to 4 child nodes
+			// point parent node to first child
+			node->firstChildIndex = nodeIndex;
+			uint8_t nextLOD = node->lod - 1;
+			QuadTreeNode* childNode;
+			// first child
+			childNode = &s_quadTree[nodeIndex];
+
+			childNode->lod = nextLOD;
+			childNode->firstChildIndex = -1;
+			childNode->x = node->x;
+			childNode->z = node->z;
+			nodesQueue[queueHead + queueSize] = nodeIndex;
+			++queueSize;
+			++nodeIndex;
+			// second child
+			childNode = &s_quadTree[nodeIndex];
+
+			childNode->lod = nextLOD;
+			childNode->firstChildIndex = -1;
+			childNode->x = node->x + halfNodeSize;
+			childNode->z = node->z;
+			nodesQueue[queueHead + queueSize] = nodeIndex;
+			++queueSize;
+			++nodeIndex;
+
+			// third child
+			childNode = &s_quadTree[nodeIndex];
+
+			childNode->lod = nextLOD;
+			childNode->firstChildIndex = -1;
+			childNode->x = node->x;
+			childNode->z = node->z + halfNodeSize;
+			nodesQueue[queueHead + queueSize] = nodeIndex;
+			++queueSize;
+			++nodeIndex;
+
+			// forth child
+			childNode = &s_quadTree[nodeIndex];
+
+			childNode->lod = nextLOD;
+			childNode->firstChildIndex = -1;
+			childNode->x = node->x + halfNodeSize;
+			childNode->z = node->z + halfNodeSize;
+			nodesQueue[queueHead + queueSize] = nodeIndex;
+			++queueSize;
+			++nodeIndex;
+		}
+	}
+
+}
+
+void generatePatchesFromNodes(QuadTreeNode** nodes, uint32_t numNodes)
+{
+	// generate patches from node
+	uint8_t* sectorsLODMap = s_sectorsLODMap;
+	InstanceData* instanceData = s_patches;
+	for (uint32_t nodeIndex = 0; nodeIndex < numNodes; ++nodeIndex)
+	{
+		QuadTreeNode* node = nodes[nodeIndex];
+		float patchSize = 8.0f * (1 << node->lod);
+		//float nodeSize = patchSize * 8.0f;
+		for (int j = 0; j < s_maxPatchesPerSectorCol; ++j)
+		{
+			for (int i = 0; i < s_maxPatchesPerSectorRow; ++i)
+			{
+				instanceData->worldSize = patchSize;
+				instanceData->worldPosX = node->x + i * patchSize;
+				instanceData->worldPosY = node->z + j * patchSize;
+				instanceData->lodTransition = 0;
+				instanceData->heightMapAtlasU = 0.125f * i;
+				instanceData->heightMapAtlasV = 0.125f * j;
+
+
+
+
+				uint32_t sectorX = ((uint32_t)instanceData->worldPosX) / 64;
+				uint32_t sectorZ = ((uint32_t)instanceData->worldPosY) / 64;
+
+				uint8_t mylod = sectorsLODMap[sectorX + sectorZ * s_worldNumSectorsX];
+				uint8_t westlod = sectorX > 0 ? sectorsLODMap[sectorX - 1 + sectorZ * s_worldNumSectorsX] : 0;
+				uint32_t nextSctorX = ((uint32_t)(instanceData->worldPosX + patchSize) / 64);
+				uint8_t eastlod = nextSctorX < s_worldNumSectorsX ? sectorsLODMap[nextSctorX + sectorZ * s_worldNumSectorsX] : 0;
+				uint8_t southlod = sectorZ > 0 ? sectorsLODMap[sectorX + (sectorZ - 1) * s_worldNumSectorsX] : 0;
+				uint32_t nextSctorZ = ((uint32_t)(instanceData->worldPosY + patchSize) / 64);
+				uint8_t northlod = nextSctorZ < s_worldNumSectorsY ? sectorsLODMap[sectorX + nextSctorZ * s_worldNumSectorsX] : 0;
+				/*uint16_t packedLOD = 0 |
+					MAX(westlod - mylod, 0) |
+					MAX(eastlod - mylod, 0) << 4 |
+					MAX(northlod - mylod, 0) << 8 |
+					MAX(southlod - mylod, 0) << 12;*/
+				uint16_t packedLOD = 0;
+				uint32_t a = MAX(westlod - mylod, 0);
+				uint32_t b = MAX(eastlod - mylod, 0);
+				uint32_t c = MAX(northlod - mylod, 0);
+				uint32_t d = MAX(southlod - mylod, 0);
+				packedLOD = (uint16_t)(a | (b << 4) | (c << 8) | (d << 12));
+
+				instanceData->lodTransition = (float)packedLOD;
+
+				++instanceData;
+				++s_numPatches;
+			}
+		}
+	}
+}
+
+void traverseQuadTree(QuadTreeNode* node)
+{
+	if (node->firstChildIndex < 0)
+	{
+		uint8_t* sectorsLODMap = s_sectorsLODMap;
+		// add note to sectors LOD map
+		uint32_t secotrStartX = (uint32_t)node->x / 64;
+		uint32_t secotrStartY = (uint32_t)node->z / 64;
+		uint32_t numSectorsInNode = 1 << node->lod;
+		for (uint32_t i = 0; i < numSectorsInNode; ++i)
+		{
+			memset(&sectorsLODMap[secotrStartX + (secotrStartY + i) * s_worldNumSectorsX], node->lod, numSectorsInNode);
+		}
+		s_nodesToRender[s_numNodesToRender++] = node;
+
+	} // if a leaf node
+	else
+	{
+		traverseQuadTree(&s_quadTree[node->firstChildIndex]);
+		traverseQuadTree(&s_quadTree[node->firstChildIndex + 1]);
+		traverseQuadTree(&s_quadTree[node->firstChildIndex + 2]);
+		traverseQuadTree(&s_quadTree[node->firstChildIndex + 3]);
+	}
+}
+
+//////////////////////////////////////////////////////////////////////////////////////////////////
+
+struct App
+{
+	void init(uint32_t windowWidth, uint32_t windowHeight);
+	bool update();
+
+	MouseState s_mouseState;
+
+private:
+	void createTerrainMesh();
+
+private:
+	uint32_t m_windowWidth;
+	uint32_t m_windowHeight;
+
+	float	mousebuff[4];
+	float	m_brushSize = 1.0;
+	bool	m_renderGrid = true;
+
+	TerrainData m_terrain;
+	BrushData	m_brush;
+
+	bgfx::TextureHandle m_gbufferTex[3];
+	bgfx::UniformHandle s_albedo;
+	bgfx::UniformHandle s_depth;
+	bgfx::UniformHandle u_params;
+	bgfx::UniformHandle u_viewProj;
+	bgfx::UniformHandle u_invViewProj;
+	bgfx::UniformHandle u_heightMapParams;
+	bgfx::UniformHandle u_renderParams;
+
+	bgfx::FrameBufferHandle m_gbuffer;
+
+	bgfx::ProgramHandle m_program;
+	bgfx::ProgramHandle m_combinedProgram;
+
+	bgfx::DynamicVertexBufferHandle m_mouseBufferHandle;
+
+	bgfx::VertexBufferHandle m_vbh;
+	bgfx::IndexBufferHandle m_ibh;
+
+	bgfx::VertexBufferHandle m_terrainVbh;
+	bgfx::IndexBufferHandle m_terrainIbh;
+
+	
+	bgfx::ProgramHandle m_terrainHeightTextureProgram;
+	bgfx::UniformHandle s_heightTexture;
+	bgfx::TextureHandle m_heightTexture;
+
+	bgfx::UniformHandle m_albedoTextureSampler;
+	bgfx::TextureHandle m_albedoTexture;
+
+	
+};
+
+static App theApp;
+
+////////////////////////////////////////////////////
+
+void App::init(uint32_t windowWidth, uint32_t windowHeight)
+{
 	// Get renderer capabilities info.
 	const bgfx::Caps* caps = bgfx::getCaps();
 
@@ -391,22 +867,28 @@ static int32_t runApiThread(bx::Thread *self, void *userData)
 	Pos4Vertex::init();
 
 	// Create static vertex buffer.
-	bgfx::VertexBufferHandle vbh = bgfx::createVertexBuffer(
+	m_vbh = bgfx::createVertexBuffer(
 		// Static data can be passed with bgfx::makeRef
 		bgfx::makeRef(s_cubeVertices, sizeof(s_cubeVertices))
 		, PosColorVertex::ms_layout
 	);
 
 	// Create static index buffer for triangle list rendering.
-	bgfx::IndexBufferHandle ibh = bgfx::createIndexBuffer(
+	m_ibh = bgfx::createIndexBuffer(
 		// Static data can be passed with bgfx::makeRef
 		bgfx::makeRef(s_cubeTriList, sizeof(s_cubeTriList))
 	);
 
 	// Create program from shaders.
-	bgfx::ProgramHandle program = loadProgram("vs_cubes", "fs_cubes");
-	bgfx::ProgramHandle combinedProgram = loadProgram("vs_deferred_combine", "fs_deferred_combine");
+	m_program = loadProgram("vs_cubes", "fs_cubes");
+	m_combinedProgram = loadProgram("vs_deferred_combine", "fs_deferred_combine");
 
+	m_terrainHeightTextureProgram = loadProgram("vs_terrain_height_texture", "fs_terrain");
+	m_albedoTexture = loadTexture("textures/forest_ground_01_dif.dds");
+	
+
+	
+	
 
 	const uint64_t tsFlags = 0
 		| BGFX_SAMPLER_MIN_POINT
@@ -417,12 +899,13 @@ static int32_t runApiThread(bx::Thread *self, void *userData)
 		;
 
 	bgfx::Attachment gbufferAt[3];
-	bgfx::TextureHandle m_gbufferTex[3];
 	
-	bgfx::FrameBufferHandle m_gbuffer;
 
-	uint32_t width = args->width;
-	uint32_t height = args->height;
+	uint32_t width = windowWidth;
+	uint32_t height = windowHeight;
+
+	m_windowWidth = width;
+	m_windowHeight = height;
 
 	/*m_gbufferTex[0] = bgfx::createTexture2D(uint16_t(width), uint16_t(height), false, 1, bgfx::TextureFormat::BGRA8, 0 | tsFlags);
 	const bgfx::Memory* mem = bgfx::alloc(width * height * 4);
@@ -443,35 +926,15 @@ static int32_t runApiThread(bx::Thread *self, void *userData)
 
 	bgfx::setViewFrameBuffer(0, m_gbuffer);
 
-	bgfx::UniformHandle s_albedo = bgfx::createUniform("s_albedo", bgfx::UniformType::Sampler);
-	bgfx::UniformHandle s_depth = bgfx::createUniform("s_depth", bgfx::UniformType::Sampler);
-	bgfx::UniformHandle u_params = bgfx::createUniform("u_params", bgfx::UniformType::Vec4);
+
 
 	// Set view 0 to the same dimensions as the window and to clear the color buffer.
 	const bgfx::ViewId kClearView = 0;
 	//bgfx::setViewClear(kClearView, BGFX_CLEAR_COLOR);
 	bgfx::setViewRect(kClearView, 0, 0, bgfx::BackbufferRatio::Equal);
-	
-	bool showStats = false;
-	bool exit = false;
-	struct MouseState
-	{
-		MouseState()
-			: m_mx(0)
-			, m_my(0)
-			, m_mz(0)
-		{
-			for (uint32_t ii = 0; ii < 4; ++ii)
-			{
-				m_buttons[ii] = 0;
-			}
-		}
 
-		int32_t m_mx;
-		int32_t m_my;
-		int32_t m_mz;
-		uint8_t m_buttons[4];
-	};
+
+	
 
 	uint32_t heightMapWidth = 1024;
 	uint32_t heightMapHeigt = 1024;
@@ -484,7 +947,7 @@ static int32_t runApiThread(bx::Thread *self, void *userData)
 		| BGFX_SAMPLER_U_CLAMP
 		| BGFX_SAMPLER_V_CLAMP);
 
-	bgfx::TextureHandle heightTextureCPU = bgfx::createTexture2D((uint16_t)heightMapWidth, (uint16_t)heightMapHeigt, false, 1, bgfx::TextureFormat::R16, 0 | BGFX_TEXTURE_READ_BACK| BGFX_TEXTURE_BLIT_DST|BGFX_SAMPLER_MIN_POINT
+	bgfx::TextureHandle heightTextureCPU = bgfx::createTexture2D((uint16_t)heightMapWidth, (uint16_t)heightMapHeigt, false, 1, bgfx::TextureFormat::R16, 0 | BGFX_TEXTURE_READ_BACK | BGFX_TEXTURE_BLIT_DST | BGFX_SAMPLER_MIN_POINT
 		| BGFX_SAMPLER_MAG_POINT
 		| BGFX_SAMPLER_MIP_POINT
 		| BGFX_SAMPLER_U_CLAMP
@@ -499,191 +962,457 @@ static int32_t runApiThread(bx::Thread *self, void *userData)
 	bgfx::UniformHandle s_texColor = bgfx::createUniform("s_texColor", bgfx::UniformType::Sampler);
 	bgfx::ProgramHandle programCompute = bgfx::createProgram(loadShader("cs_update"), true);
 
-	bgfx::UniformHandle u_viewProj = bgfx::createUniform("u_myViewProj", bgfx::UniformType::Mat4);
-	bgfx::UniformHandle u_invViewProj = bgfx::createUniform("u_myInvViewProj", bgfx::UniformType::Mat4);
+	u_viewProj = bgfx::createUniform("u_myViewProj", bgfx::UniformType::Mat4);
+	u_invViewProj = bgfx::createUniform("u_myInvViewProj", bgfx::UniformType::Mat4);
+	s_albedo = bgfx::createUniform("s_albedo", bgfx::UniformType::Sampler);
+	s_depth = bgfx::createUniform("s_depth", bgfx::UniformType::Sampler);
+	u_params = bgfx::createUniform("u_params", bgfx::UniformType::Vec4);
+	m_heightTexture.idx = bgfx::kInvalidHandle;
+	s_heightTexture = bgfx::createUniform("s_heightTexture", bgfx::UniformType::Sampler);
+	m_albedoTextureSampler = bgfx::createUniform("albedoTexture", bgfx::UniformType::Sampler);
+	u_heightMapParams = bgfx::createUniform("u_heightMapParams", bgfx::UniformType::Vec4);
+	u_renderParams = bgfx::createUniform("u_renderParams", bgfx::UniformType::Vec4);
 
-	float mousebuff[4];
+
+	uint32_t num = (s_terrainSize + 1) * (s_terrainSize + 1);
+	m_terrain.m_vertices = (PosColorVertex*)BX_ALLOC(getDefaultAllocator(), num * sizeof(PosColorVertex));
+	m_terrain.m_indices = (uint16_t*)BX_ALLOC(getDefaultAllocator(), num * sizeof(uint16_t) * 6);
+	m_terrain.m_heightMap = (uint16_t*)BX_ALLOC(getDefaultAllocator(), sizeof(uint16_t) * s_heightMapSize * s_heightMapSize);
+
+	bx::memSet(m_terrain.m_heightMap, 0, sizeof(uint16_t) * s_heightMapSize * s_heightMapSize);
+	for (int i = 0; i < 64; ++i)
+	{
+		m_terrain.m_heightMap[i] = 5;
+	}
+
+	for (int i = 0; i < 17; ++i)
+	{
+		m_terrain.m_heightMap[i + s_heightMapSize * 17] = 25;
+	}
+
+	createTerrainMesh();
+
+	
 	mousebuff[0] = 512.0f;
 	mousebuff[1] = 384.0f;
 	mousebuff[2] = 0.0f;
 	mousebuff[3] = 0.0f;
 	const bgfx::Memory* memmouse = bgfx::makeRef(mousebuff, sizeof(mousebuff));
-	bgfx::DynamicVertexBufferHandle mouseBufferHandle = bgfx::createDynamicVertexBuffer(memmouse, Pos4Vertex::ms_layout, BGFX_BUFFER_COMPUTE_READ/*BGFX_BUFFER_COMPUTE_READ_WRITE*/);
+	m_mouseBufferHandle = bgfx::createDynamicVertexBuffer(memmouse, Pos4Vertex::ms_layout, BGFX_BUFFER_COMPUTE_READ/*BGFX_BUFFER_COMPUTE_READ_WRITE*/);
 
-	float brushSize = 1.0;
+	s_sectorsLODMap = (uint8_t*)malloc(s_worldNumSectorsX * s_worldNumSectorsY);
+	memset(s_sectorsLODMap, 0, s_worldNumSectorsX * s_worldNumSectorsY);
+	s_quadTree = (QuadTreeNode*)malloc(sizeof(QuadTreeNode) * s_maxNodesInTree);
+	s_nodesToRender = (QuadTreeNode**)malloc(sizeof(QuadTreeNode*) * s_maxNodesInTree);
+	s_patches = (InstanceData*)malloc(sizeof(InstanceData) * s_maxNodesInTree * 64);
 
-	static MouseState mouseState;
+	cameraCreate();
+	cameraSetPosition({ s_terrainSize / 2.0f, 40.0f, 0.0f });
+	cameraSetVerticalAngle(-bx::kPiQuarter * 2);
+	
+}
+
+void App::createTerrainMesh()
+{
+	
+	uint32_t colors[3];
+	colors[0] = (uint32_t)(255 | 0 << 8 | 0 << 16 | 255 << 25);
+	colors[1] = (uint32_t)(0 | 255 << 8 | 0 << 16 | 255 << 25);
+	colors[2] = (uint32_t)(0 | 0 << 8 | 255 << 16 | 255 << 25);
+
+
+	uint32_t startIndex = 0;
+	m_terrain.m_vertexCount = 0;
+
+	for (uint32_t y = 0; y <= s_terrainSize; y++)
+	{
+
+		startIndex = y % 2;
+		uint32_t rowIndex = startIndex;
+
+
+		for (uint32_t x = 0; x <= s_terrainSize; x++)
+		{
+			rowIndex = x % 2;
+			rowIndex += startIndex;
+
+			PosColorVertex* vert = &m_terrain.m_vertices[m_terrain.m_vertexCount];
+			vert->m_x = (float)x / 16.0f;
+			vert->m_y = 0.0;// m_terrain.m_heightMap[(y * s_terrainSize) + x];
+			vert->m_z = (float)y / 16.0f;
+			vert->m_abgr = colors[rowIndex];
+
+			m_terrain.m_vertexCount++;
+		}
+	}
+
+	int dir = 1;
+	m_terrain.m_indexCount = 0;
+	for (uint16_t y = 0; y < (s_terrainSize); y++)
+	{
+		uint16_t y_offset = (y * (s_terrainSize + 1));
+		dir = 1 - (y % 2);
+		for (uint16_t x = 0; x < (s_terrainSize); x++)
+		{
+			if (dir == 0)
+			{
+				m_terrain.m_indices[m_terrain.m_indexCount + 0] = y_offset + x + 1;
+				m_terrain.m_indices[m_terrain.m_indexCount + 1] = y_offset + x + s_terrainSize + 1;
+				m_terrain.m_indices[m_terrain.m_indexCount + 2] = y_offset + x;
+				m_terrain.m_indices[m_terrain.m_indexCount + 3] = y_offset + x + s_terrainSize + 1 + 1;
+				m_terrain.m_indices[m_terrain.m_indexCount + 4] = y_offset + x + s_terrainSize + 1;
+				m_terrain.m_indices[m_terrain.m_indexCount + 5] = y_offset + x + 1;
+			}
+			else
+			{
+				m_terrain.m_indices[m_terrain.m_indexCount + 0] = y_offset + x + 1;
+				m_terrain.m_indices[m_terrain.m_indexCount + 1] = y_offset + x + s_terrainSize + 1 + 1;
+				m_terrain.m_indices[m_terrain.m_indexCount + 2] = y_offset + x;
+				m_terrain.m_indices[m_terrain.m_indexCount + 3] = y_offset + x + s_terrainSize + 1 + 1;
+				m_terrain.m_indices[m_terrain.m_indexCount + 4] = y_offset + x + s_terrainSize + 1;
+				m_terrain.m_indices[m_terrain.m_indexCount + 5] = y_offset + x;
+			}
+			dir = 1 - dir;
+
+			m_terrain.m_indexCount += 6;
+		}
+	}
+
+	const bgfx::Memory* mem;
+	mem = bgfx::makeRef(&m_terrain.m_vertices[0], sizeof(PosColorVertex) * m_terrain.m_vertexCount);
+	m_terrainVbh = bgfx::createVertexBuffer(mem, PosColorVertex::ms_layout);
+
+	mem = bgfx::makeRef(&m_terrain.m_indices[0], sizeof(uint16_t) * m_terrain.m_indexCount);
+	m_terrainIbh = bgfx::createIndexBuffer(mem);
+
+
+	if (!bgfx::isValid(m_heightTexture))
+	{
+		m_heightTexture = bgfx::createTexture2D((uint16_t)s_heightMapSize, (uint16_t)s_heightMapSize, false, 1, bgfx::TextureFormat::R16);
+	}
+
+	mem = bgfx::makeRef(&m_terrain.m_heightMap[0], sizeof(uint16_t) * s_heightMapSize * s_heightMapSize);
+	bgfx::updateTexture2D(m_heightTexture, 0, 0, 0, 0, (uint16_t)s_heightMapSize, (uint16_t)s_heightMapSize, mem);
+	
+}
+
+bool App::update()
+{
+	int64_t now = bx::getHPCounter();
+	static int64_t last = now;
+	const int64_t frameTime = now - last;
+	last = now;
+	const double freq = double(bx::getHPFrequency());
+	const float deltaTime = float(frameTime / freq);
+
+	uint32_t width = m_windowWidth;
+	uint32_t height = m_windowHeight;
+	const bgfx::Caps* caps = bgfx::getCaps();
+
+	imguiBeginFrame(s_mouseState.m_mx
+		, s_mouseState.m_my
+		, (s_mouseState.m_buttons[0] ? IMGUI_MBUT_LEFT : 0)
+		| (s_mouseState.m_buttons[1] ? IMGUI_MBUT_RIGHT : 0)
+		| (s_mouseState.m_buttons[2] ? IMGUI_MBUT_MIDDLE : 0)
+		, s_mouseState.m_mz, width, height);
+
+	ImGui::SetNextWindowPos(
+		ImVec2(width - width / 5.0f - 10.0f, 10.0f)
+		, ImGuiCond_FirstUseEver
+	);
+	ImGui::SetNextWindowSize(
+		ImVec2(width / 5.0f, height / 3.0f)
+		, ImGuiCond_FirstUseEver
+	);
+	ImGui::Begin("Settings"
+		, NULL
+		, 0
+	);
+	ImGui::SliderFloat("Brush size", &m_brushSize, 1, 20);
+
+	const bgfx::Stats* stats = bgfx::getStats();
+	const double toMsCpu = 1000.0 / stats->cpuTimerFreq;
+	const double toMsGpu = 1000.0 / stats->gpuTimerFreq;
+	const double frameMs = double(stats->cpuTimeFrame)*toMsCpu;
+
+	s_frameTime.pushSample(float(frameMs));
+
+	char frameTextOverlay[256];
+	bx::snprintf(frameTextOverlay, BX_COUNTOF(frameTextOverlay), "%s%.3fms, %s%.3fms\nAvg: %.3fms, %.1f FPS"
+		, ICON_FA_ARROW_DOWN
+		, s_frameTime.m_min
+		, ICON_FA_ARROW_UP
+		, s_frameTime.m_max
+		, s_frameTime.m_avg
+		, 1000.0f / s_frameTime.m_avg
+	);
+
+	ImGui::PushStyleColor(ImGuiCol_PlotHistogram, ImColor(0.0f, 0.5f, 0.15f, 1.0f).Value);
+	ImGui::PlotHistogram("Frame"
+		, s_frameTime.m_values
+		, SampleData::kNumSamples
+		, s_frameTime.m_offset
+		, frameTextOverlay
+		, 0.0f
+		, 60.0f
+		, ImVec2(0.0f, 45.0f)
+	);
+	ImGui::PopStyleColor();
+
+	ImGui::End();
+
+	if (!ImGui::MouseOverArea())
+	{
+		// Update camera.
+		cameraUpdate(deltaTime, s_mouseState);
+
+		
+	}
+
+	imguiEndFrame();
+
+
+
+
+	//if (readingFrame == currFrame)
+	//{
+	//	int ofer = 4;
+	//}
+
+	//bgfx::setImage(0, heightTexture, 0, bgfx::Access::ReadWrite);
+	//bgfx::dispatch(0, programCompute, 1024 / 16, 1024 / 16);
+
+
+
+	//if (currFrame == 100 && readingFrame == 0)
+	//{
+	//	bgfx::blit(0, heightTextureCPU, 0, 0, heightTexture, 0, 0);
+	//	readingFrame = bgfx::readTexture(heightTextureCPU, heightmap2);
+	//}
+
+
+	//// This dummy draw call is here to make sure that view 0 is cleared if no other draw calls are submitted to view 0.
+	bgfx::touch(0);
+	// Set view 0 clear state.
+	bgfx::setViewClear(0
+		, BGFX_CLEAR_COLOR | BGFX_CLEAR_DEPTH
+		, 0x303030ff
+		, 1.0f
+		, 0
+	);
+
+	
+
+	mousebuff[0] = (float)s_mouseState.m_mx;
+	mousebuff[1] = (float)s_mouseState.m_my;
+	mousebuff[2] = (float)(s_mouseState.m_buttons[0] | s_mouseState.m_buttons[1] << 1);
+	const bgfx::Memory* memmouse2 = bgfx::makeRef(mousebuff, sizeof(mousebuff));
+	bgfx::update(m_mouseBufferHandle, 0, memmouse2);
+
+	const bx::Vec3 at = { 0.0f, 0.0f,   0.0f };
+	const bx::Vec3 eye = { 0.0f, 0.0f, -35.0f };
+
+	float projView[16];
+	float invProjView[16];
+
+	// Set view and projection matrix for view 0.
+	{
+		float view[16];
+		bx::mtxLookAt(view, eye, at);
+
+		float proj[16];
+		bx::mtxProj(proj, 60.0f, float(width) / float(height), 0.1f, 2000.0f, caps->homogeneousDepth);
+		cameraGetViewMtx(view);
+		bgfx::setViewTransform(0, view, proj);
+
+
+		bx::mtxMul(projView, view, proj);
+		bx::mtxInverse(invProjView, projView);
+
+		// Set view 0 default viewport.
+		bgfx::setViewRect(0, 0, 0, uint16_t(width), uint16_t(height));
+	}
+
+	float params[4];
+	params[0] = 1.0f / (float)width;
+	params[1] = 1.0f / (float)height;
+	params[2] = m_brushSize;
+	bgfx::setUniform(u_params, params, 1);
+
+
+	///////////////////////////////////////////////////////////
+#if 1
+	static float ff = 0;
+	s_numPatches = 0;
+	memset(s_sectorsLODMap, 0, s_worldNumSectorsX * s_worldNumSectorsY);
+	float playerPos[3];
+	playerPos[0] = 100 + ff;
+	playerPos[1] = 0;
+	playerPos[2] = 100 + ff;
+
+	buildQuadTree(playerPos);
+	s_numNodesToRender = 0;
+	traverseQuadTree(s_quadTree);
+	generatePatchesFromNodes(s_nodesToRender, s_numNodesToRender);
+
+
+
+	InstanceData* patches = s_patches;
+
+
+	uint32_t numInstances = s_numPatches;
+	uint16_t instanceStride = sizeof(InstanceData);
+	if (numInstances == bgfx::getAvailInstanceDataBuffer(numInstances, instanceStride))
+	{
+		bgfx::InstanceDataBuffer idb;
+		bgfx::allocInstanceDataBuffer(&idb, numInstances, instanceStride);
+
+		uint8_t* data = idb.data;
+		memcpy(data, patches, sizeof(InstanceData)* numInstances);
+
+
+		float transform[16];
+		bx::mtxSRT(transform, 1.0f, 1.0f, 1.0f, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f);
+		bgfx::setTransform(transform);
+
+		// Set instance data buffer.
+		bgfx::setInstanceDataBuffer(&idb);
+		bgfx::setVertexBuffer(0, m_terrainVbh);
+		bgfx::setIndexBuffer(m_terrainIbh);
+		bgfx::setTexture(0, s_heightTexture, m_heightTexture, BGFX_SAMPLER_U_CLAMP | BGFX_SAMPLER_V_CLAMP);
+		bgfx::setTexture(1, m_albedoTextureSampler, m_albedoTexture, BGFX_SAMPLER_U_CLAMP | BGFX_SAMPLER_V_CLAMP);
+		//bgfx::setState(BGFX_STATE_DEFAULT| BGFX_STATE_PT_LINES);
+		float val[4];
+		val[0] = 1.0; // height map scale
+		val[1] = 0.0; // sea level
+		val[2] = 0.125f; // size of patch inside height texture
+		bgfx::setUniform(u_heightMapParams, val);
+		val[0] = (float)m_renderGrid;
+		val[1] = m_brush.m_worldPosition.x;
+		val[2] = m_brush.m_worldPosition.y;
+		val[3] = m_brush.m_worldPosition.z;
+
+		bgfx::setUniform(u_renderParams, val);
+
+		bgfx::submit(0, m_terrainHeightTextureProgram);
+
+	}
+
+	/////////////////////////////////////////////////////////
+#else
+	float mtx[16];
+	float mtx2[16];
+	float mtx3[16];
+	bx::mtxRotateXY(mtx3, bx::kPiQuarter, bx::kPiQuarter);
+	bx::mtxScale(mtx2, 10);
+	bx::mtxMul(mtx, mtx3, mtx2);
+	mtx[12] = 0;
+	mtx[13] = 0;
+	mtx[14] = 0.0f;
+
+	uint64_t state = 0
+		| BGFX_STATE_WRITE_R
+		| BGFX_STATE_WRITE_G
+		| BGFX_STATE_WRITE_B
+		| BGFX_STATE_WRITE_A
+		| BGFX_STATE_WRITE_Z
+		| BGFX_STATE_DEPTH_TEST_LESS
+		| BGFX_STATE_CULL_CW
+		| BGFX_STATE_MSAA;
+
+	// Set model matrix for rendering.
+	bgfx::setTransform(mtx);
+
+	// Set vertex and index buffer.
+	bgfx::setVertexBuffer(0, m_vbh);
+	bgfx::setIndexBuffer(m_ibh);
+
+	// Set render states.
+	bgfx::setState(state);
+
+	// Submit primitive for rendering to view 0.
+	bgfx::submit(0, m_program);
+
+
+
+	
+
+#endif
+
+	float proj[16];
+	bx::mtxOrtho(proj, 0.0f, 1.0f, 1.0f, 0.0f, 0.0f, 100.0f, 0.0f, caps->homogeneousDepth);
+	bgfx::setViewTransform(1, NULL, proj);
+
+	bgfx::setState(0
+		| BGFX_STATE_WRITE_RGB
+		//| BGFX_STATE_WRITE_A
+	);
+	bgfx::setUniform(u_invViewProj, invProjView, 1);
+
+	bgfx::setViewRect(1, 0, 0, uint16_t(width), uint16_t(height));
+	bgfx::setTexture(0, s_albedo, m_gbufferTex[0]);
+	bgfx::setTexture(1, s_depth, m_gbufferTex[2]);
+	screenSpaceQuad((float)width, (float)height, 0, caps->originBottomLeft);
+	bgfx::setBuffer(2, m_mouseBufferHandle, bgfx::Access::Read);
+	bgfx::submit(1, m_combinedProgram);
+
+	uint32_t currFrame = bgfx::frame();
+
+	return true;
+}
+
+////////////////////////////////////////////////////
+
+
+static int32_t runApiThread(bx::Thread *self, void *userData)
+{
+	auto args = (ApiThreadArgs *)userData;
+	// Initialize bgfx using the native window handle and window resolution.
+	bgfx::Init init;
+	init.platformData = args->platformData;
+	init.resolution.width = args->width;
+	init.resolution.height = args->height;
+	init.resolution.reset = BGFX_RESET_NONE;
+	if (!bgfx::init(init))
+		return 1;
+
+	theApp.init(args->width, args->height);
+
+	bool exit = false;
+
+	
 	while (!exit) {
 		// Handle events from the main thread.
 		while (auto ev = (EventType *)s_apiThreadEvents.pop()) {
 			if (*ev == EventType::Key) {
 				auto keyEvent = (KeyEvent *)ev;
-				if (keyEvent->key == GLFW_KEY_F1 && keyEvent->action == GLFW_RELEASE)
-					showStats = !showStats;
+				/*if (keyEvent->key == GLFW_KEY_F1 && keyEvent->action == GLFW_RELEASE)
+					showStats = !showStats;*/
 			}
 			else if (*ev == EventType::MouseCursor) {
 				auto mouseCursorEvent = (MouseCursorEvent *)ev;
-				mouseState.m_mx = (int32_t)mouseCursorEvent->x;
-				mouseState.m_my = (int32_t)mouseCursorEvent->y;
+				theApp.s_mouseState.m_mx = (int32_t)mouseCursorEvent->x;
+				theApp.s_mouseState.m_my = (int32_t)mouseCursorEvent->y;
 			}
 			else if (*ev == EventType::MouseButton) {
 				auto mouseButtonEvent = (MouseButtonEvent *)ev;
-				mouseState.m_buttons[mouseButtonEvent->button] = !!mouseButtonEvent->action;
+				theApp.s_mouseState.m_buttons[mouseButtonEvent->button] = !!mouseButtonEvent->action;
 			}
 			else if (*ev == EventType::Resize) {
 				auto resizeEvent = (ResizeEvent *)ev;
 				bgfx::reset(resizeEvent->width, resizeEvent->height, BGFX_RESET_VSYNC);
-				bgfx::setViewRect(kClearView, 0, 0, bgfx::BackbufferRatio::Equal);
+				/*bgfx::setViewRect(kClearView, 0, 0, bgfx::BackbufferRatio::Equal);
 				width = resizeEvent->width;
-				height = resizeEvent->height;
+				height = resizeEvent->height;*/
 			} else if (*ev == EventType::Exit) {
 				exit = true;
 			}
 			delete ev;
 		}
 
-		imguiBeginFrame(mouseState.m_mx
-			, mouseState.m_my
-			, (mouseState.m_buttons[0] ? IMGUI_MBUT_LEFT : 0)
-			| (mouseState.m_buttons[1] ? IMGUI_MBUT_RIGHT : 0)
-			| (mouseState.m_buttons[2] ? IMGUI_MBUT_MIDDLE : 0)
-			, mouseState.m_mz, width, height);
-
-		ImGui::SetNextWindowPos(
-			ImVec2(width - width / 5.0f - 10.0f, 10.0f)
-			, ImGuiCond_FirstUseEver
-		);
-		ImGui::SetNextWindowSize(
-			ImVec2(width / 5.0f, height / 3.0f)
-			, ImGuiCond_FirstUseEver
-		);
-		ImGui::Begin("Settings"
-			, NULL
-			, 0
-		);
-		ImGui::SliderFloat("Brush size", &brushSize, 1, 20);
-
-		ImGui::End();
-
-		imguiEndFrame();
-
-
-
-
-		if (readingFrame == currFrame)
-		{
-			int ofer = 4;
-		}
-
-		bgfx::setImage(0, heightTexture, 0, bgfx::Access::ReadWrite);
-		bgfx::dispatch(0, programCompute, 1024 / 16, 1024 / 16);
+		theApp.update();
 
 		
-
-		if (currFrame == 100 && readingFrame == 0)
-		{
-			bgfx::blit(0, heightTextureCPU, 0, 0, heightTexture, 0, 0);
-			readingFrame = bgfx::readTexture(heightTextureCPU, heightmap2);
-		}
-		
-
-		//// This dummy draw call is here to make sure that view 0 is cleared if no other draw calls are submitted to view 0.
-		bgfx::touch(kClearView);
-		// Set view 0 clear state.
-		bgfx::setViewClear(0
-			, BGFX_CLEAR_COLOR | BGFX_CLEAR_DEPTH
-			, 0x303030ff
-			, 1.0f
-			, 0
-		);
-
-		mousebuff[0] = (float)mouseState.m_mx;
-		mousebuff[1] = (float)mouseState.m_my;
-		mousebuff[2] = (float)(mouseState.m_buttons[0] | mouseState.m_buttons[1] << 1);
-		const bgfx::Memory* memmouse2 = bgfx::makeRef(mousebuff, sizeof(mousebuff));
-		bgfx::update(mouseBufferHandle, 0, memmouse2);
-
-		const bx::Vec3 at = { 0.0f, 0.0f,   0.0f };
-		const bx::Vec3 eye = { 0.0f, 0.0f, -35.0f };
-
-		float projView[16];
-		float invProjView[16];
-
-		// Set view and projection matrix for view 0.
-		{
-			float view[16];
-			bx::mtxLookAt(view, eye, at);
-
-			float proj[16];
-			bx::mtxProj(proj, 60.0f, float(width) / float(height), 0.1f, 100.0f, bgfx::getCaps()->homogeneousDepth);
-			bgfx::setViewTransform(0, view, proj);
-
-			
-			bx::mtxMul(projView, view, proj);
-			bx::mtxInverse(invProjView, projView);
-
-			float params[4];
-			params[0] = 1.0f / (float)width;
-			params[1] = 1.0f / (float)height;
-			params[2] = brushSize;
-			bgfx::setUniform(u_params, params, 1);
-
-			// Set view 0 default viewport.
-			bgfx::setViewRect(0, 0, 0, uint16_t(width), uint16_t(height));
-		}
-
-		float mtx[16];
-		//bx::mtxRotateXY(mtx, 0, 0);
-		bx::mtxScale(mtx, 10);
-		mtx[12] = 0;
-		mtx[13] = 0;
-		mtx[14] = 0.0f;
-
-		uint64_t state = 0
-			| BGFX_STATE_WRITE_R
-			| BGFX_STATE_WRITE_G
-			| BGFX_STATE_WRITE_B
-			| BGFX_STATE_WRITE_A
-			| BGFX_STATE_WRITE_Z
-			| BGFX_STATE_DEPTH_TEST_LESS
-			| BGFX_STATE_CULL_CW
-			| BGFX_STATE_MSAA;
-
-		// Set model matrix for rendering.
-		bgfx::setTransform(mtx);
-
-		// Set vertex and index buffer.
-		bgfx::setVertexBuffer(0, vbh);
-		bgfx::setIndexBuffer(ibh);
-
-		// Set render states.
-		bgfx::setState(state);
-
-		// Submit primitive for rendering to view 0.
-		bgfx::submit(0, program);
-
-		
-
-		float proj[16];
-		bx::mtxOrtho(proj, 0.0f, 1.0f, 1.0f, 0.0f, 0.0f, 100.0f, 0.0f, caps->homogeneousDepth);
-		bgfx::setViewTransform(1, NULL, proj);
-
-		bgfx::setState(0
-			| BGFX_STATE_WRITE_RGB
-			//| BGFX_STATE_WRITE_A
-		);
-		bgfx::setUniform(u_invViewProj, invProjView, 1);
-		
-		bgfx::setViewRect(1, 0, 0, uint16_t(width), uint16_t(height));
-		bgfx::setTexture(0, s_albedo, m_gbufferTex[0]);
-		bgfx::setTexture(1, s_depth, m_gbufferTex[2]);
-		screenSpaceQuad((float)width, (float)height, 0, caps->originBottomLeft);
-		bgfx::setBuffer(2, mouseBufferHandle, bgfx::Access::Read);
-		bgfx::submit(1, combinedProgram);
-
-		
-		currFrame = bgfx::frame();
-		int ofer = 4;
 	}
 
 	imguiDestroy();
