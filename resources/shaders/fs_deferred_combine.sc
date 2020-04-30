@@ -1,6 +1,7 @@
 $input v_texcoord0
 
 #include "bgfx_compute.sh"
+#include "common.sh"
 
 /*
  * Copyright 2011-2020 Branimir Karadzic. All rights reserved.
@@ -27,12 +28,12 @@ float LinearizeDepth(vec2 uv)
 }
 
 
-vec3 GetWorldPositionFromDepth (vec2 tid, float depth, vec2 invScreenSize)
+vec3 GetWorldPositionFromDepth (vec2 tid, float depth)
 {
     vec4 ndc;
     ndc.xy = tid;
     ndc.xy = ndc.xy * 2 - 1;
-   // ndc.y *= -1;
+    ndc.y *= -1;
     
     ndc.z = depth;
     ndc.w = 1;
@@ -50,24 +51,29 @@ inline float evaluateModificationBrush (    vec2             worldPosition,
     float dist = length(worldPosition - mousePosition);
     dist /= size;
     return saturate(min(2-dist, 1.0 / (1.0 + pow(dist*2.0, 4))));
+	//if (dist > size) { return 0;}
+	//return 1;
 }
 
 void main()
 {
-	vec2 mousePos = u_mouseBuffer[0].xy;
-	vec2 invScreenSize = u_params.xy;
-	vec2 uv = mousePos * invScreenSize;
+	//vec2 mousePos = u_mouseBuffer[0].xy;
+	//vec2 invScreenSize = u_params.xy;
+	vec2 uv = u_params.xy;
 	const float mouseDepth = texture2D(s_depth, uv);
 
-	
+#if 1	
     
-    const vec3 worldMousePosition = GetWorldPositionFromDepth (uv, mouseDepth, invScreenSize);
+    //const vec3 worldMousePosition = GetWorldPositionFromDepth (uv, mouseDepth);
+	const vec3 worldMousePosition = u_mouseBuffer[0].xyz;
 
 	const float pixelDepth = texture2D(s_depth, v_texcoord0);
-	const float3 worldPosition = GetWorldPositionFromDepth (v_texcoord0, pixelDepth, invScreenSize);
+	const float3 worldPosition = GetWorldPositionFromDepth (v_texcoord0, pixelDepth);
     
 	float brushSize = u_params.z;
-	float brush = evaluateModificationBrush(worldPosition.xy, worldMousePosition.xy, brushSize);
+	float brush = evaluateModificationBrush(worldPosition.xz, worldMousePosition.xz, brushSize);
+	
+	
 	vec4 brushColor;
 	// if left mouse button pressed - green. if right pressed red . none pressed - gray
 	brushColor.xyz = u_mouseBuffer[0].z == 1 ? vec3(0.5, 0.9, 0.5) : u_mouseBuffer[0].z == 2 ? vec3(0.9, 0.5, 0.5) : vec3(0.5, 0.5, 0.7);
@@ -80,5 +86,8 @@ void main()
 	//color = vec4(brush, brush, brush, 1.0);
 	//color.x *= u_mouseBuffer[0];
 	color.xyz = mix(color.xyz, brushColor.xyz, brushColor.w);
+#else
+	vec4 color = vec4(u_mouseBuffer[0].x ,0,0,0);
+#endif
 	gl_FragColor = color;
 }

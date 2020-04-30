@@ -6,7 +6,7 @@ $output v_position, v_texcoord0, v_bc
  * License: https://github.com/bkaradzic/bgfx#license-bsd-2-clause
  */
 
-#include "../common/common.sh"
+#include "common.sh"
 
 SAMPLER2D(s_heightTexture, 0);
 // x - height scale

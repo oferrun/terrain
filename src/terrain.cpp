@@ -377,10 +377,113 @@ static void glfw_errorCallback(int error, const char *description)
 	fprintf(stderr, "GLFW error %d: %s\n", error, description);
 }
 
+static int translateKey(int key)
+{
+	static int s_translateKey[256];
+	static bool s_isInit = false;
+
+	if (!s_isInit)
+	{
+
+		s_isInit = true;
+		bx::memSet(s_translateKey, 0, sizeof(s_translateKey));
+		s_translateKey[VK_ESCAPE] = Key::Esc;
+		s_translateKey[VK_RETURN] = Key::Return;
+		s_translateKey[VK_TAB] = Key::Tab;
+		s_translateKey[VK_BACK] = Key::Backspace;
+		s_translateKey[VK_SPACE] = Key::Space;
+		s_translateKey[VK_UP] = Key::Up;
+		s_translateKey[VK_DOWN] = Key::Down;
+		s_translateKey[VK_LEFT] = Key::Left;
+		s_translateKey[VK_RIGHT] = Key::Right;
+		s_translateKey[VK_INSERT] = Key::Insert;
+		s_translateKey[VK_DELETE] = Key::Delete;
+		s_translateKey[VK_HOME] = Key::Home;
+		s_translateKey[VK_END] = Key::End;
+		s_translateKey[VK_PRIOR] = Key::PageUp;
+		s_translateKey[VK_NEXT] = Key::PageDown;
+		s_translateKey[VK_SNAPSHOT] = Key::Print;
+		s_translateKey[VK_OEM_PLUS] = Key::Plus;
+		s_translateKey[VK_OEM_MINUS] = Key::Minus;
+		s_translateKey[VK_OEM_4] = Key::LeftBracket;
+		s_translateKey[VK_OEM_6] = Key::RightBracket;
+		s_translateKey[VK_OEM_1] = Key::Semicolon;
+		s_translateKey[VK_OEM_7] = Key::Quote;
+		s_translateKey[VK_OEM_COMMA] = Key::Comma;
+		s_translateKey[VK_OEM_PERIOD] = Key::Period;
+		s_translateKey[VK_DECIMAL] = Key::Period;
+		s_translateKey[VK_OEM_2] = Key::Slash;
+		s_translateKey[VK_OEM_5] = Key::Backslash;
+		s_translateKey[VK_OEM_3] = Key::Tilde;
+		s_translateKey[VK_F1] = Key::F1;
+		s_translateKey[VK_F2] = Key::F2;
+		s_translateKey[VK_F3] = Key::F3;
+		s_translateKey[VK_F4] = Key::F4;
+		s_translateKey[VK_F5] = Key::F5;
+		s_translateKey[VK_F6] = Key::F6;
+		s_translateKey[VK_F7] = Key::F7;
+		s_translateKey[VK_F8] = Key::F8;
+		s_translateKey[VK_F9] = Key::F9;
+		s_translateKey[VK_F10] = Key::F10;
+		s_translateKey[VK_F11] = Key::F11;
+		s_translateKey[VK_F12] = Key::F12;
+		s_translateKey[VK_NUMPAD0] = Key::NumPad0;
+		s_translateKey[VK_NUMPAD1] = Key::NumPad1;
+		s_translateKey[VK_NUMPAD2] = Key::NumPad2;
+		s_translateKey[VK_NUMPAD3] = Key::NumPad3;
+		s_translateKey[VK_NUMPAD4] = Key::NumPad4;
+		s_translateKey[VK_NUMPAD5] = Key::NumPad5;
+		s_translateKey[VK_NUMPAD6] = Key::NumPad6;
+		s_translateKey[VK_NUMPAD7] = Key::NumPad7;
+		s_translateKey[VK_NUMPAD8] = Key::NumPad8;
+		s_translateKey[VK_NUMPAD9] = Key::NumPad9;
+		s_translateKey[uint8_t('0')] = Key::Key0;
+		s_translateKey[uint8_t('1')] = Key::Key1;
+		s_translateKey[uint8_t('2')] = Key::Key2;
+		s_translateKey[uint8_t('3')] = Key::Key3;
+		s_translateKey[uint8_t('4')] = Key::Key4;
+		s_translateKey[uint8_t('5')] = Key::Key5;
+		s_translateKey[uint8_t('6')] = Key::Key6;
+		s_translateKey[uint8_t('7')] = Key::Key7;
+		s_translateKey[uint8_t('8')] = Key::Key8;
+		s_translateKey[uint8_t('9')] = Key::Key9;
+		s_translateKey[uint8_t('A')] = Key::KeyA;
+		s_translateKey[uint8_t('B')] = Key::KeyB;
+		s_translateKey[uint8_t('C')] = Key::KeyC;
+		s_translateKey[uint8_t('D')] = Key::KeyD;
+		s_translateKey[uint8_t('E')] = Key::KeyE;
+		s_translateKey[uint8_t('F')] = Key::KeyF;
+		s_translateKey[uint8_t('G')] = Key::KeyG;
+		s_translateKey[uint8_t('H')] = Key::KeyH;
+		s_translateKey[uint8_t('I')] = Key::KeyI;
+		s_translateKey[uint8_t('J')] = Key::KeyJ;
+		s_translateKey[uint8_t('K')] = Key::KeyK;
+		s_translateKey[uint8_t('L')] = Key::KeyL;
+		s_translateKey[uint8_t('M')] = Key::KeyM;
+		s_translateKey[uint8_t('N')] = Key::KeyN;
+		s_translateKey[uint8_t('O')] = Key::KeyO;
+		s_translateKey[uint8_t('P')] = Key::KeyP;
+		s_translateKey[uint8_t('Q')] = Key::KeyQ;
+		s_translateKey[uint8_t('R')] = Key::KeyR;
+		s_translateKey[uint8_t('S')] = Key::KeyS;
+		s_translateKey[uint8_t('T')] = Key::KeyT;
+		s_translateKey[uint8_t('U')] = Key::KeyU;
+		s_translateKey[uint8_t('V')] = Key::KeyV;
+		s_translateKey[uint8_t('W')] = Key::KeyW;
+		s_translateKey[uint8_t('X')] = Key::KeyX;
+		s_translateKey[uint8_t('Y')] = Key::KeyY;
+		s_translateKey[uint8_t('Z')] = Key::KeyZ;
+
+		
+	}
+
+	return s_translateKey[key];
+}
+
 static void glfw_keyCallback(GLFWwindow *window, int key, int scancode, int action, int mods)
 {
 	auto keyEvent = new KeyEvent;
-	keyEvent->key = key;
+	keyEvent->key = translateKey(key);
 	keyEvent->action = action;
 	s_apiThreadEvents.push(keyEvent);
 }
@@ -796,6 +899,7 @@ struct App
 {
 	void init(uint32_t windowWidth, uint32_t windowHeight);
 	bool update();
+	void handleKey(KeyEvent* keyEvent);
 
 	MouseState s_mouseState;
 
@@ -826,8 +930,10 @@ private:
 
 	bgfx::ProgramHandle m_program;
 	bgfx::ProgramHandle m_combinedProgram;
+	bgfx::ProgramHandle m_programComputeMousePos;
 
 	bgfx::DynamicVertexBufferHandle m_mouseBufferHandle;
+	bgfx::DynamicVertexBufferHandle m_mouseBufferHandle2;
 
 	bgfx::VertexBufferHandle m_vbh;
 	bgfx::IndexBufferHandle m_ibh;
@@ -879,13 +985,7 @@ void App::init(uint32_t windowWidth, uint32_t windowHeight)
 		bgfx::makeRef(s_cubeTriList, sizeof(s_cubeTriList))
 	);
 
-	// Create program from shaders.
-	m_program = loadProgram("vs_cubes", "fs_cubes");
-	m_combinedProgram = loadProgram("vs_deferred_combine", "fs_deferred_combine");
 
-	m_terrainHeightTextureProgram = loadProgram("vs_terrain_height_texture", "fs_terrain");
-	m_albedoTexture = loadTexture("textures/forest_ground_01_dif.dds");
-	
 
 	
 	
@@ -960,7 +1060,8 @@ void App::init(uint32_t windowWidth, uint32_t windowHeight)
 	bgfx::updateTexture2D(heightTexture, 0, 0, 0, 0, (uint16_t)heightMapWidth, (uint16_t)heightMapHeigt, mem);
 	memset(heightmap2, 0xAA, heightMapWidth * heightMapHeigt * sizeof(uint16_t));
 	bgfx::UniformHandle s_texColor = bgfx::createUniform("s_texColor", bgfx::UniformType::Sampler);
-	bgfx::ProgramHandle programCompute = bgfx::createProgram(loadShader("cs_update"), true);
+	//bgfx::ProgramHandle programCompute = bgfx::createProgram(loadShader("cs_update"), true);
+	
 
 	u_viewProj = bgfx::createUniform("u_myViewProj", bgfx::UniformType::Mat4);
 	u_invViewProj = bgfx::createUniform("u_myInvViewProj", bgfx::UniformType::Mat4);
@@ -973,6 +1074,14 @@ void App::init(uint32_t windowWidth, uint32_t windowHeight)
 	u_heightMapParams = bgfx::createUniform("u_heightMapParams", bgfx::UniformType::Vec4);
 	u_renderParams = bgfx::createUniform("u_renderParams", bgfx::UniformType::Vec4);
 
+	// Create program from shaders.
+	m_program = loadProgram("vs_cubes", "fs_cubes");
+	m_combinedProgram = loadProgram("vs_deferred_combine", "fs_deferred_combine");
+
+	m_terrainHeightTextureProgram = loadProgram("vs_terrain_height_texture", "fs_terrain");
+	m_albedoTexture = loadTexture("textures/forest_ground_01_dif.dds");
+
+	m_programComputeMousePos = bgfx::createProgram(loadShader("cs_updateMousePos"), true);
 
 	uint32_t num = (s_terrainSize + 1) * (s_terrainSize + 1);
 	m_terrain.m_vertices = (PosColorVertex*)BX_ALLOC(getDefaultAllocator(), num * sizeof(PosColorVertex));
@@ -993,12 +1102,9 @@ void App::init(uint32_t windowWidth, uint32_t windowHeight)
 	createTerrainMesh();
 
 	
-	mousebuff[0] = 512.0f;
-	mousebuff[1] = 384.0f;
-	mousebuff[2] = 0.0f;
-	mousebuff[3] = 0.0f;
-	const bgfx::Memory* memmouse = bgfx::makeRef(mousebuff, sizeof(mousebuff));
-	m_mouseBufferHandle = bgfx::createDynamicVertexBuffer(memmouse, Pos4Vertex::ms_layout, BGFX_BUFFER_COMPUTE_READ/*BGFX_BUFFER_COMPUTE_READ_WRITE*/);
+
+	m_mouseBufferHandle = bgfx::createDynamicVertexBuffer(1, Pos4Vertex::ms_layout, BGFX_BUFFER_COMPUTE_READ_WRITE);
+	m_mouseBufferHandle2 = bgfx::createDynamicVertexBuffer(1, Pos4Vertex::ms_layout, BGFX_BUFFER_COMPUTE_READ_WRITE);
 
 	s_sectorsLODMap = (uint8_t*)malloc(s_worldNumSectorsX * s_worldNumSectorsY);
 	memset(s_sectorsLODMap, 0, s_worldNumSectorsX * s_worldNumSectorsY);
@@ -1010,6 +1116,45 @@ void App::init(uint32_t windowWidth, uint32_t windowHeight)
 	cameraSetPosition({ s_terrainSize / 2.0f, 40.0f, 0.0f });
 	cameraSetVerticalAngle(-bx::kPiQuarter * 2);
 	
+}
+
+void App::handleKey(KeyEvent* keyEvent)
+{
+
+	switch(keyEvent->key)
+	{
+	case Key::KeyW:
+		{
+			cameraSetKeyState(CAMERA_KEY_FORWARD, true);
+			break;
+		}
+		case Key::KeyA:
+		{
+			cameraSetKeyState(CAMERA_KEY_LEFT, true);
+			break;
+		}
+		case Key::KeyD:
+		{
+			cameraSetKeyState(CAMERA_KEY_RIGHT, true);
+			break;
+		}
+		case Key::KeyS:
+		{
+			cameraSetKeyState(CAMERA_KEY_BACKWARD, true);
+			break;
+		}
+		case Key::KeyE:
+		{
+			cameraSetKeyState(CAMERA_KEY_UP, true);
+			break;
+		}
+		case Key::KeyC:
+		{
+			cameraSetKeyState(CAMERA_KEY_DOWN, true);
+			break;
+		}
+	
+	}
 }
 
 void App::createTerrainMesh()
@@ -1182,6 +1327,8 @@ bool App::update()
 	//bgfx::setImage(0, heightTexture, 0, bgfx::Access::ReadWrite);
 	//bgfx::dispatch(0, programCompute, 1024 / 16, 1024 / 16);
 
+	
+
 
 
 	//if (currFrame == 100 && readingFrame == 0)
@@ -1203,11 +1350,8 @@ bool App::update()
 
 	
 
-	mousebuff[0] = (float)s_mouseState.m_mx;
-	mousebuff[1] = (float)s_mouseState.m_my;
-	mousebuff[2] = (float)(s_mouseState.m_buttons[0] | s_mouseState.m_buttons[1] << 1);
-	const bgfx::Memory* memmouse2 = bgfx::makeRef(mousebuff, sizeof(mousebuff));
-	bgfx::update(m_mouseBufferHandle, 0, memmouse2);
+	
+	
 
 	const bx::Vec3 at = { 0.0f, 0.0f,   0.0f };
 	const bx::Vec3 eye = { 0.0f, 0.0f, -35.0f };
@@ -1233,15 +1377,15 @@ bool App::update()
 		bgfx::setViewRect(0, 0, 0, uint16_t(width), uint16_t(height));
 	}
 
-	float params[4];
-	params[0] = 1.0f / (float)width;
-	params[1] = 1.0f / (float)height;
-	params[2] = m_brushSize;
-	bgfx::setUniform(u_params, params, 1);
+	//mousebuff[0] = (float)s_mouseState.m_mx;
+	//mousebuff[1] = (float)s_mouseState.m_my;
+	//mousebuff[2] = (float)(s_mouseState.m_buttons[0] | s_mouseState.m_buttons[1] << 1);
+
+	
 
 
 	///////////////////////////////////////////////////////////
-#if 1
+
 	static float ff = 0;
 	s_numPatches = 0;
 	memset(s_sectorsLODMap, 0, s_worldNumSectorsX * s_worldNumSectorsY);
@@ -1298,63 +1442,39 @@ bool App::update()
 
 	}
 
-	/////////////////////////////////////////////////////////
-#else
-	float mtx[16];
-	float mtx2[16];
-	float mtx3[16];
-	bx::mtxRotateXY(mtx3, bx::kPiQuarter, bx::kPiQuarter);
-	bx::mtxScale(mtx2, 10);
-	bx::mtxMul(mtx, mtx3, mtx2);
-	mtx[12] = 0;
-	mtx[13] = 0;
-	mtx[14] = 0.0f;
+	///////////////////////////////////////////////////////////
 
-	uint64_t state = 0
-		| BGFX_STATE_WRITE_R
-		| BGFX_STATE_WRITE_G
-		| BGFX_STATE_WRITE_B
-		| BGFX_STATE_WRITE_A
-		| BGFX_STATE_WRITE_Z
-		| BGFX_STATE_DEPTH_TEST_LESS
-		| BGFX_STATE_CULL_CW
-		| BGFX_STATE_MSAA;
-
-	// Set model matrix for rendering.
-	bgfx::setTransform(mtx);
-
-	// Set vertex and index buffer.
-	bgfx::setVertexBuffer(0, m_vbh);
-	bgfx::setIndexBuffer(m_ibh);
-
-	// Set render states.
-	bgfx::setState(state);
-
-	// Submit primitive for rendering to view 0.
-	bgfx::submit(0, m_program);
-
-
-
+	float params[4];
+	params[0] = (float)s_mouseState.m_mx / (float)width;
+	params[1] = (float)s_mouseState.m_my / (float)height;
+	params[2] = m_brushSize;
+	bgfx::setUniform(u_params, params, 1);
+	bgfx::setUniform(u_invViewProj, invProjView, 1);
 	
+	//bgfx::setImage(0, m_gbufferTex[2], 0, bgfx::Access::Read);
+	bgfx::setTexture(0, s_depth, m_gbufferTex[2]);
+	bgfx::setBuffer(1, m_mouseBufferHandle, bgfx::Access::Write);
 
-#endif
+	bgfx::dispatch(1, m_programComputeMousePos, 1, 1);
+
+	// screen space quad
 
 	float proj[16];
 	bx::mtxOrtho(proj, 0.0f, 1.0f, 1.0f, 0.0f, 0.0f, 100.0f, 0.0f, caps->homogeneousDepth);
-	bgfx::setViewTransform(1, NULL, proj);
+	bgfx::setViewTransform(2, NULL, proj);
 
 	bgfx::setState(0
 		| BGFX_STATE_WRITE_RGB
 		//| BGFX_STATE_WRITE_A
 	);
-	bgfx::setUniform(u_invViewProj, invProjView, 1);
+	
 
-	bgfx::setViewRect(1, 0, 0, uint16_t(width), uint16_t(height));
+	bgfx::setViewRect(2, 0, 0, uint16_t(width), uint16_t(height));
 	bgfx::setTexture(0, s_albedo, m_gbufferTex[0]);
 	bgfx::setTexture(1, s_depth, m_gbufferTex[2]);
 	screenSpaceQuad((float)width, (float)height, 0, caps->originBottomLeft);
 	bgfx::setBuffer(2, m_mouseBufferHandle, bgfx::Access::Read);
-	bgfx::submit(1, m_combinedProgram);
+	bgfx::submit(2, m_combinedProgram);
 
 	uint32_t currFrame = bgfx::frame();
 
@@ -1388,6 +1508,7 @@ static int32_t runApiThread(bx::Thread *self, void *userData)
 				auto keyEvent = (KeyEvent *)ev;
 				/*if (keyEvent->key == GLFW_KEY_F1 && keyEvent->action == GLFW_RELEASE)
 					showStats = !showStats;*/
+				theApp.handleKey(keyEvent);
 			}
 			else if (*ev == EventType::MouseCursor) {
 				auto mouseCursorEvent = (MouseCursorEvent *)ev;

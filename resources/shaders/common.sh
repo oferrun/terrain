@@ -3,7 +3,8 @@
  * License: https://github.com/bkaradzic/bgfx#license-bsd-2-clause
  */
 
-//#include "../common/common.sh"
+#include <bgfx_shader.sh>
+#include "shaderlib.sh"
 
 vec2 blinn(vec3 _lightDir, vec3 _normal, vec3 _viewDir)
 {
