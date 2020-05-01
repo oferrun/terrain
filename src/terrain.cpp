@@ -722,7 +722,7 @@ static uint8_t* s_sectorsLODMap = NULL;
 static uint32_t s_numPatches = 0;
 static InstanceData* s_patches = NULL;
 
-static uint32_t s_heightMapSize = 129;
+static uint32_t s_heightMapSize = 128;
 
 //////////////////////////////////////////////////////////////////////////////////////////////////
 
@@ -1462,12 +1462,12 @@ bool App::update()
 	{
 		bgfx::setImage(0, m_heightTexture, 0, bgfx::Access::ReadWrite, bgfx::TextureFormat::R32F);
 		bgfx::setBuffer(1, m_mouseBufferHandle, bgfx::Access::Read);
-		bgfx::dispatch(2, m_programComputeUpdateHeightMap, 8, 8);
-		static float buff[129 * 129];
+		bgfx::dispatch(2, m_programComputeUpdateHeightMap, s_heightMapSize / 8, s_heightMapSize /8);
+		/*static float buff[129 * 129];
 		static float f = 0;
 		const bgfx::Memory* mem = bgfx::makeRef(buff, sizeof(buff));
 		f += 0.01f;
-		buff[0] = f;
+		buff[0] = f;*/
 		//bgfx::updateTexture2D(m_heightTexture, 0, 0, 0, 0, (uint16_t)s_heightMapSize, (uint16_t)s_heightMapSize, mem);
 	}
 	

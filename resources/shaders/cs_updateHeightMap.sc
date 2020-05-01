@@ -32,7 +32,8 @@ void main()
 {
 	ivec2 coord = ivec2(gl_GlobalInvocationID.xy);
 	const vec3 worldMousePosition = u_mouseBuffer[0].xyz;
-	vec2 uv = vec2(gl_GlobalInvocationID.xy) / vec2(129.0, 129.0);
+	uvec2 dim = imageSize(s_height).xy;
+	vec2 uv = vec2(gl_GlobalInvocationID.xy) / dim;
 	const vec2 worldPosition_xz =  uv * 64.0;
 	float brushSize = u_params.z;
 	
