@@ -722,7 +722,7 @@ static uint8_t* s_sectorsLODMap = NULL;
 static uint32_t s_numPatches = 0;
 static InstanceData* s_patches = NULL;
 
-static uint32_t s_heightMapSize = 132;
+static uint32_t s_heightMapSize = 129;
 
 //////////////////////////////////////////////////////////////////////////////////////////////////
 
@@ -931,6 +931,7 @@ private:
 	bgfx::ProgramHandle m_program;
 	bgfx::ProgramHandle m_combinedProgram;
 	bgfx::ProgramHandle m_programComputeMousePos;
+	bgfx::ProgramHandle m_programComputeUpdateHeightMap;
 
 	bgfx::DynamicVertexBufferHandle m_mouseBufferHandle;
 	bgfx::DynamicVertexBufferHandle m_mouseBufferHandle2;
@@ -1082,6 +1083,7 @@ void App::init(uint32_t windowWidth, uint32_t windowHeight)
 	m_albedoTexture = loadTexture("textures/forest_ground_01_dif.dds");
 
 	m_programComputeMousePos = bgfx::createProgram(loadShader("cs_updateMousePos"), true);
+	m_programComputeUpdateHeightMap = bgfx::createProgram(loadShader("cs_updateHeightMap"), true);
 
 	uint32_t num = (s_terrainSize + 1) * (s_terrainSize + 1);
 	m_terrain.m_vertices = (PosColorVertex*)BX_ALLOC(getDefaultAllocator(), num * sizeof(PosColorVertex));
@@ -1233,11 +1235,11 @@ void App::createTerrainMesh()
 
 	if (!bgfx::isValid(m_heightTexture))
 	{
-		m_heightTexture = bgfx::createTexture2D((uint16_t)s_heightMapSize, (uint16_t)s_heightMapSize, false, 1, bgfx::TextureFormat::R16);
+		m_heightTexture = bgfx::createTexture2D((uint16_t)s_heightMapSize, (uint16_t)s_heightMapSize, false, 1, bgfx::TextureFormat::TextureFormat::R32F, 0 | BGFX_TEXTURE_COMPUTE_WRITE |  BGFX_SAMPLER_POINT | BGFX_SAMPLER_UVW_CLAMP);
 	}
 
-	mem = bgfx::makeRef(&m_terrain.m_heightMap[0], sizeof(uint16_t) * s_heightMapSize * s_heightMapSize);
-	bgfx::updateTexture2D(m_heightTexture, 0, 0, 0, 0, (uint16_t)s_heightMapSize, (uint16_t)s_heightMapSize, mem);
+	//mem = bgfx::makeRef(&m_terrain.m_heightMap[0], sizeof(uint16_t) * s_heightMapSize * s_heightMapSize);
+	//bgfx::updateTexture2D(m_heightTexture, 0, 0, 0, 0, (uint16_t)s_heightMapSize, (uint16_t)s_heightMapSize, mem);
 	
 }
 
@@ -1454,8 +1456,21 @@ bool App::update()
 	//bgfx::setImage(0, m_gbufferTex[2], 0, bgfx::Access::Read);
 	bgfx::setTexture(0, s_depth, m_gbufferTex[2]);
 	bgfx::setBuffer(1, m_mouseBufferHandle, bgfx::Access::Write);
-
 	bgfx::dispatch(1, m_programComputeMousePos, 1, 1);
+
+	if (s_mouseState.m_buttons[0])
+	{
+		bgfx::setImage(0, m_heightTexture, 0, bgfx::Access::ReadWrite, bgfx::TextureFormat::R32F);
+		bgfx::setBuffer(1, m_mouseBufferHandle, bgfx::Access::Read);
+		bgfx::dispatch(2, m_programComputeUpdateHeightMap, 8, 8);
+		static float buff[129 * 129];
+		static float f = 0;
+		const bgfx::Memory* mem = bgfx::makeRef(buff, sizeof(buff));
+		f += 0.01f;
+		buff[0] = f;
+		//bgfx::updateTexture2D(m_heightTexture, 0, 0, 0, 0, (uint16_t)s_heightMapSize, (uint16_t)s_heightMapSize, mem);
+	}
+	
 
 	// screen space quad
 

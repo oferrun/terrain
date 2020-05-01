@@ -47,9 +47,7 @@ void main()
 {
 	vec2 mousePosScreen = u_params.xy;
 	
-	//const float mouseDepth = imageLoad(s_depth, mousePosScreen);
 	const float mouseDepth = texture2DLod(s_depth, mousePosScreen, 0);
-
 
     const vec3 worldMousePosition = GetWorldPositionFromDepth (mousePosScreen, mouseDepth);
 	u_mouseBuffer[0] = vec4(worldMousePosition, 1);
