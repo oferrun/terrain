@@ -69,14 +69,14 @@ void main()
 
 	const float pixelDepth = texture2D(s_depth, v_texcoord0);
 	const float3 worldPosition = GetWorldPositionFromDepth (v_texcoord0, pixelDepth);
-    
-	float brushSize = u_params.z;
+    float mouseState = u_params.z;
+	float brushSize = u_params.w;
 	float brush = evaluateModificationBrush(worldPosition.xz, worldMousePosition.xz, brushSize);
 	
 	
 	vec4 brushColor;
 	// if left mouse button pressed - green. if right pressed red . none pressed - gray
-	brushColor.xyz = u_mouseBuffer[0].z == 1 ? vec3(0.5, 0.9, 0.5) : u_mouseBuffer[0].z == 2 ? vec3(0.9, 0.5, 0.5) : vec3(0.5, 0.5, 0.7);
+	brushColor.xyz = mouseState == 1 ? vec3(0.5, 0.9, 0.5) : mouseState == 2 ? vec3(0.9, 0.5, 0.5) : vec3(0.5, 0.5, 0.7);
 	brushColor.w = brush;
 	vec4 color  = texture2D(s_albedo, v_texcoord0);
 
@@ -86,8 +86,7 @@ void main()
 	//color = vec4(brush, brush, brush, 1.0);
 	//color.x *= u_mouseBuffer[0];
 	color.xyz = mix(color.xyz, brushColor.xyz, brushColor.w);
-#else
-	vec4 color = vec4(u_mouseBuffer[0].x ,0,0,0);
+
 #endif
 	gl_FragColor = color;
 }

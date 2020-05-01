@@ -16,7 +16,7 @@ uniform vec4 u_heightMapParams;
 // displacement map
 float dmap(vec2 pos)
 {
-	return (texture2DLod(s_heightTexture, pos , 0).x) * 1.0;
+	return (texture2DLod(s_heightTexture, pos , 0).x) * 65536;
 }
 
 void main()
@@ -104,6 +104,7 @@ void main()
 	v_bc = a_color1;
 
 	v_position.y = dmap(v_texcoord0) * u_heightMapParams.x;
+	v_texcoord0 *= 8.0;
 	vec4 worldPos = vec4(v_position.xyz, 1.0);
 	worldPos.x += i_data0.x;
 	worldPos.z += i_data0.y;

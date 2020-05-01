@@ -912,7 +912,7 @@ private:
 
 	float	mousebuff[4];
 	float	m_brushSize = 1.0;
-	bool	m_renderGrid = true;
+	bool	m_renderGrid = false;
 
 	TerrainData m_terrain;
 	BrushData	m_brush;
@@ -1106,7 +1106,7 @@ void App::init(uint32_t windowWidth, uint32_t windowHeight)
 	
 
 	m_mouseBufferHandle = bgfx::createDynamicVertexBuffer(1, Pos4Vertex::ms_layout, BGFX_BUFFER_COMPUTE_READ_WRITE);
-	m_mouseBufferHandle2 = bgfx::createDynamicVertexBuffer(1, Pos4Vertex::ms_layout, BGFX_BUFFER_COMPUTE_READ_WRITE);
+	
 
 	s_sectorsLODMap = (uint8_t*)malloc(s_worldNumSectorsX * s_worldNumSectorsY);
 	memset(s_sectorsLODMap, 0, s_worldNumSectorsX * s_worldNumSectorsY);
@@ -1235,7 +1235,7 @@ void App::createTerrainMesh()
 
 	if (!bgfx::isValid(m_heightTexture))
 	{
-		m_heightTexture = bgfx::createTexture2D((uint16_t)s_heightMapSize, (uint16_t)s_heightMapSize, false, 1, bgfx::TextureFormat::TextureFormat::R32F, 0 | BGFX_TEXTURE_COMPUTE_WRITE |  BGFX_SAMPLER_POINT | BGFX_SAMPLER_UVW_CLAMP);
+		m_heightTexture = bgfx::createTexture2D((uint16_t)s_heightMapSize, (uint16_t)s_heightMapSize, false, 1, bgfx::TextureFormat::TextureFormat::R16, 0 | BGFX_TEXTURE_COMPUTE_WRITE |  BGFX_SAMPLER_POINT | BGFX_SAMPLER_UVW_CLAMP);
 	}
 
 	//mem = bgfx::makeRef(&m_terrain.m_heightMap[0], sizeof(uint16_t) * s_heightMapSize * s_heightMapSize);
@@ -1275,6 +1275,7 @@ bool App::update()
 		, NULL
 		, 0
 	);
+	ImGui::Checkbox("Render grid", &m_renderGrid);
 	ImGui::SliderFloat("Brush size", &m_brushSize, 1, 20);
 
 	const bgfx::Stats* stats = bgfx::getStats();
@@ -1308,8 +1309,11 @@ bool App::update()
 
 	ImGui::End();
 
+	bool imguiMouseCapture = true;
+
 	if (!ImGui::MouseOverArea())
 	{
+		imguiMouseCapture = false;
 		// Update camera.
 		cameraUpdate(deltaTime, s_mouseState);
 
@@ -1426,11 +1430,11 @@ bool App::update()
 		bgfx::setVertexBuffer(0, m_terrainVbh);
 		bgfx::setIndexBuffer(m_terrainIbh);
 		bgfx::setTexture(0, s_heightTexture, m_heightTexture, BGFX_SAMPLER_U_CLAMP | BGFX_SAMPLER_V_CLAMP);
-		bgfx::setTexture(1, m_albedoTextureSampler, m_albedoTexture, BGFX_SAMPLER_U_CLAMP | BGFX_SAMPLER_V_CLAMP);
+		bgfx::setTexture(1, m_albedoTextureSampler, m_albedoTexture,0);
 		//bgfx::setState(BGFX_STATE_DEFAULT| BGFX_STATE_PT_LINES);
 		float val[4];
-		val[0] = 1.0; // height map scale
-		val[1] = 0.0; // sea level
+		val[0] = 0.1f; // height map scale
+		val[1] = 0.0f; // sea level
 		val[2] = 0.125f; // size of patch inside height texture
 		bgfx::setUniform(u_heightMapParams, val);
 		val[0] = (float)m_renderGrid;
@@ -1449,7 +1453,8 @@ bool App::update()
 	float params[4];
 	params[0] = (float)s_mouseState.m_mx / (float)width;
 	params[1] = (float)s_mouseState.m_my / (float)height;
-	params[2] = m_brushSize;
+	params[2] = (float)(s_mouseState.m_buttons[0] | s_mouseState.m_buttons[1] << 1);
+	params[3] = m_brushSize;
 	bgfx::setUniform(u_params, params, 1);
 	bgfx::setUniform(u_invViewProj, invProjView, 1);
 	
@@ -1458,11 +1463,12 @@ bool App::update()
 	bgfx::setBuffer(1, m_mouseBufferHandle, bgfx::Access::Write);
 	bgfx::dispatch(1, m_programComputeMousePos, 1, 1);
 
-	if (s_mouseState.m_buttons[0])
+	if (!imguiMouseCapture && s_mouseState.m_buttons[0])
 	{
-		bgfx::setImage(0, m_heightTexture, 0, bgfx::Access::ReadWrite, bgfx::TextureFormat::R32F);
+		bgfx::setImage(0, m_heightTexture, 0, bgfx::Access::ReadWrite, bgfx::TextureFormat::R16);
 		bgfx::setBuffer(1, m_mouseBufferHandle, bgfx::Access::Read);
 		bgfx::dispatch(2, m_programComputeUpdateHeightMap, s_heightMapSize / 8, s_heightMapSize /8);
+		//bgfx::dispatch(2, m_programComputeUpdateHeightMap, 1, 1);
 		/*static float buff[129 * 129];
 		static float f = 0;
 		const bgfx::Memory* mem = bgfx::makeRef(buff, sizeof(buff));

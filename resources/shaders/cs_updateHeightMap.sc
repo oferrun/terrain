@@ -6,7 +6,7 @@
 #include "bgfx_compute.sh"
 #include "common.sh"
 
-IMAGE2D_RW(s_height, r32f, 0);
+IMAGE2D_RW(s_height, r8, 0);
 //SAMPLER2D(s_depth, 0);
 BUFFER_RO(u_mouseBuffer, vec4, 1);
 
@@ -37,10 +37,11 @@ void main()
 	const vec2 worldPosition_xz =  uv * 64.0;
 	float brushSize = u_params.z;
 	
-	float displacement = evaluateModificationBrush(worldPosition_xz, worldMousePosition.xz, brushSize) * 0.01;
-	float h = imageLoad(s_height,coord).x;
+	float displacement = evaluateModificationBrush(worldPosition_xz, worldMousePosition.xz, brushSize) * 0.000015;
+
+	float h = imageLoad(s_height,coord).x ;
 	
 	//displacement = worldMousePosition.x / 64.0;
 
-	imageStore(s_height, coord, h + displacement);
+	imageStore(s_height, coord, h +  displacement);
 }

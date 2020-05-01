@@ -27,12 +27,12 @@ void main()
 		vec3 edgeCol = mix(col, wfColor, wfOpacity);
 		col = mix(edgeCol, col, edge);
 	}
-	vec4 center = vec4(u_renderParams.y, 0.0, u_renderParams.w, 0.0);
+	//vec4 center = vec4(u_renderParams.y, 0.0, u_renderParams.w, 0.0);
 
-	float dist = distance(center, v_position);
-	if (dist > 5.0 && dist < 6.0 )
-	{
-		col = vec3(1.0, 0.0, 0.0);
-	}
+	//float dist = distance(center, v_position);
+	//if (dist > 5.0 && dist < 6.0 )
+	//	{
+	//	col = vec3(1.0, 0.0, 0.0);
+	//}
 	gl_FragColor = vec4(col, 1.0);
 }
